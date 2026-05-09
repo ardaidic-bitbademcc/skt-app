@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "SKT Takip",
+    "slug": "skt-takip",
+    "version": "1.0.0",
+    "scheme": "skt",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": { "backgroundColor": "#1d4ed8" },
+    "ios": {
+      "bundleIdentifier": "com.skt.takip",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Barkod okumak için kamera gerekli"
+      }
+    },
+    "android": {
+      "package": "com.skt.takip",
+      "permissions": ["CAMERA"]
+    },
+    "plugins": [
+      "expo-router",
+      ["expo-camera", { "cameraPermission": "Barkod okumak için kamera gerekli" }]
+    ]
+  }
+}

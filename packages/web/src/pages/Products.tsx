@@ -1,0 +1,314 @@
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import api from '../lib/api';
+import { PageHeader } from '../components/PageHeader';
+import { Table, Column } from '../components/Table';
+import { Modal } from '../components/Modal';
+import { apiError } from '../lib/utils';
+import type { Product } from '../lib/types';
+
+interface ProductForm {
+  name: string;
+  sku: string;
+  unit: string;
+  criticalDays: number;
+  warningDays: number;
+  categoryId: string;
+  supplierId: string;
+}
+
+const EMPTY_FORM: ProductForm = {
+  name: '', sku: '', unit: 'adet', criticalDays: 7, warningDays: 30, categoryId: '', supplierId: '',
+};
+
+export default function Products() {
+  const qc = useQueryClient();
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [modal, setModal] = useState<'add' | 'edit' | 'barcode' | null>(null);
+  const [selected, setSelected] = useState<Product | null>(null);
+  const [form, setForm] = useState<ProductForm>(EMPTY_FORM);
+  const [barcodeInput, setBarcodeInput] = useState('');
+  const [formError, setFormError] = useState('');
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['products', search, page],
+    queryFn: () =>
+      api.get('/products', { params: { search, page, limit: 20 } }).then((r) => r.data),
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: (payload: ProductForm) =>
+      selected
+        ? api.put(`/products/${selected.id}`, payload)
+        : api.post('/products', payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['products'] });
+      closeModal();
+    },
+    onError: (err) => setFormError(apiError(err)),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/products/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['products'] }),
+  });
+
+  const barcodeMutation = useMutation({
+    mutationFn: ({ id, code }: { id: string; code: string }) =>
+      api.post(`/products/${id}/barcodes`, { code }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['products'] });
+      setBarcodeInput('');
+      setFormError('');
+    },
+    onError: (err) => setFormError(apiError(err)),
+  });
+
+  function openAdd() {
+    setSelected(null);
+    setForm(EMPTY_FORM);
+    setFormError('');
+    setModal('add');
+  }
+
+  function openEdit(p: Product) {
+    setSelected(p);
+    setForm({
+      name: p.name,
+      sku: p.sku ?? '',
+      unit: p.unit,
+      criticalDays: p.criticalDays,
+      warningDays: p.warningDays,
+      categoryId: p.categoryId ?? '',
+      supplierId: p.supplierId ?? '',
+    });
+    setFormError('');
+    setModal('edit');
+  }
+
+  function openBarcode(p: Product) {
+    setSelected(p);
+    setBarcodeInput('');
+    setFormError('');
+    setModal('barcode');
+  }
+
+  function closeModal() {
+    setModal(null);
+    setSelected(null);
+    setFormError('');
+  }
+
+  function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    setFormError('');
+    saveMutation.mutate(form);
+  }
+
+  const columns: Column<Product>[] = [
+    { key: 'name', header: 'Ürün Adı' },
+    { key: 'sku', header: 'SKU', render: (r) => r.sku ?? '-' },
+    { key: 'unit', header: 'Birim' },
+    {
+      key: 'barcodes',
+      header: 'Barkodlar',
+      render: (r) => (
+        <span className="text-xs text-gray-500">
+          {r.barcodes?.length ? r.barcodes.map((b: any) => b.code).join(', ') : '-'}
+        </span>
+      ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      className: 'w-32',
+      render: (r) => (
+        <div className="flex gap-2">
+          <button
+            onClick={() => openEdit(r)}
+            className="text-xs text-blue-600 hover:underline"
+          >
+            Düzenle
+          </button>
+          <button
+            onClick={() => openBarcode(r)}
+            className="text-xs text-gray-500 hover:underline"
+          >
+            Barkod
+          </button>
+          <button
+            onClick={() => {
+              if (confirm('Ürünü silmek istediğinize emin misiniz?')) deleteMutation.mutate(r.id);
+            }}
+            className="text-xs text-red-500 hover:underline"
+          >
+            Sil
+          </button>
+        </div>
+      ),
+    },
+  ];
+
+  return (
+    <div className="flex flex-col h-full">
+      <PageHeader
+        title="Ürünler"
+        subtitle={data ? `${data.total} ürün` : undefined}
+        action={
+          <button
+            onClick={openAdd}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700"
+          >
+            + Ürün Ekle
+          </button>
+        }
+      />
+
+      <div className="p-6 flex flex-col gap-4 flex-1">
+        <input
+          type="text"
+          placeholder="Ürün ara..."
+          value={search}
+          onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+          className="w-64 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+
+        <Table columns={columns} data={data?.items ?? []} loading={isLoading} />
+
+        {data && data.totalPages > 1 && (
+          <div className="flex gap-2 justify-end">
+            <button
+              disabled={page === 1}
+              onClick={() => setPage((p) => p - 1)}
+              className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg disabled:opacity-40 hover:bg-gray-50"
+            >
+              Önceki
+            </button>
+            <span className="px-3 py-1.5 text-sm text-gray-600">
+              {page} / {data.totalPages}
+            </span>
+            <button
+              disabled={page === data.totalPages}
+              onClick={() => setPage((p) => p + 1)}
+              className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg disabled:opacity-40 hover:bg-gray-50"
+            >
+              Sonraki
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Add / Edit Modal */}
+      <Modal
+        open={modal === 'add' || modal === 'edit'}
+        onClose={closeModal}
+        title={modal === 'edit' ? 'Ürünü Düzenle' : 'Yeni Ürün'}
+      >
+        <form onSubmit={handleSave} className="space-y-4">
+          <Field label="Ürün Adı *">
+            <input
+              required
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              className={INPUT}
+            />
+          </Field>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="SKU">
+              <input
+                value={form.sku}
+                onChange={(e) => setForm({ ...form, sku: e.target.value })}
+                className={INPUT}
+              />
+            </Field>
+            <Field label="Birim *">
+              <input
+                required
+                value={form.unit}
+                onChange={(e) => setForm({ ...form, unit: e.target.value })}
+                className={INPUT}
+              />
+            </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Kritik Gün">
+              <input
+                type="number"
+                min={1}
+                value={form.criticalDays}
+                onChange={(e) => setForm({ ...form, criticalDays: +e.target.value })}
+                className={INPUT}
+              />
+            </Field>
+            <Field label="Uyarı Günü">
+              <input
+                type="number"
+                min={1}
+                value={form.warningDays}
+                onChange={(e) => setForm({ ...form, warningDays: +e.target.value })}
+                className={INPUT}
+              />
+            </Field>
+          </div>
+          {formError && <p className="text-sm text-red-600">{formError}</p>}
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={closeModal} className={BTN_SECONDARY}>İptal</button>
+            <button type="submit" disabled={saveMutation.isPending} className={BTN_PRIMARY}>
+              {saveMutation.isPending ? 'Kaydediliyor...' : 'Kaydet'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Barcode Modal */}
+      <Modal open={modal === 'barcode'} onClose={closeModal} title="Barkod Yönetimi">
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600">{selected?.name}</p>
+          <div className="flex gap-2">
+            <input
+              value={barcodeInput}
+              onChange={(e) => setBarcodeInput(e.target.value)}
+              placeholder="Barkod numarası"
+              className={`${INPUT} flex-1`}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && barcodeInput.trim() && selected) {
+                  barcodeMutation.mutate({ id: selected.id, code: barcodeInput.trim() });
+                }
+              }}
+            />
+            <button
+              disabled={!barcodeInput.trim() || barcodeMutation.isPending}
+              onClick={() => selected && barcodeMutation.mutate({ id: selected.id, code: barcodeInput.trim() })}
+              className={BTN_PRIMARY}
+            >
+              Ekle
+            </button>
+          </div>
+          {formError && <p className="text-sm text-red-600">{formError}</p>}
+          <ul className="divide-y divide-gray-100">
+            {selected?.barcodes?.map((b: any) => (
+              <li key={b.id} className="py-2 text-sm text-gray-700 font-mono">{b.code}</li>
+            ))}
+            {!selected?.barcodes?.length && (
+              <li className="py-4 text-center text-sm text-gray-400">Barkod yok</li>
+            )}
+          </ul>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      {children}
+    </div>
+  );
+}
+
+const INPUT = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+const BTN_PRIMARY = 'bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50';
+const BTN_SECONDARY = 'border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50';

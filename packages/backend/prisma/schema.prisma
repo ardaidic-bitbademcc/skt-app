@@ -1,0 +1,185 @@
+// SQLite enum desteklemez — tipler String olarak saklanır,
+// doğrulama Zod + TypeScript katmanında yapılır.
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// role: "ADMIN" | "STAFF" | "VIEWER"
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      String   @default("STAFF")
+  branchId  String?
+  branch    Branch?  @relation(fields: [branchId], references: [id])
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stockMovements      StockMovement[]
+  auditLogs           AuditLog[]
+  notificationSetting NotificationSetting?
+}
+
+model Branch {
+  id        String   @id @default(cuid())
+  name      String
+  address   String?
+  phone     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users      User[]
+  warehouses Warehouse[]
+  stockLots  StockLot[]
+}
+
+model Warehouse {
+  id        String   @id @default(cuid())
+  name      String
+  branchId  String
+  branch    Branch   @relation(fields: [branchId], references: [id])
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stockLots StockLot[]
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  products Product[]
+}
+
+model Supplier {
+  id        String   @id @default(cuid())
+  name      String
+  contact   String?
+  phone     String?
+  email     String?
+  address   String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stockLots StockLot[]
+}
+
+model Product {
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+  categoryId  String?
+  category    Category? @relation(fields: [categoryId], references: [id])
+  unit        String    @default("adet")
+  minStock    Int       @default(0)
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  barcodes  ProductBarcode[]
+  stockLots StockLot[]
+}
+
+model ProductBarcode {
+  id        String  @id @default(cuid())
+  barcode   String  @unique
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  isPrimary Boolean @default(false)
+
+  @@index([barcode])
+}
+
+// status: "SAFE" | "WARNING" | "CRITICAL" | "EXPIRED"
+// Aynı productId + warehouseId + expiryDate → tek lot (FEFO)
+model StockLot {
+  id          String    @id @default(cuid())
+  productId   String
+  product     Product   @relation(fields: [productId], references: [id])
+  warehouseId String
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
+  branchId    String
+  branch      Branch    @relation(fields: [branchId], references: [id])
+  supplierId  String?
+  supplier    Supplier? @relation(fields: [supplierId], references: [id])
+
+  lotNumber  String?
+  expiryDate DateTime
+  quantity   Int      @default(0)
+  status     String   @default("SAFE")
+  notes      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  movements    StockMovement[]
+  expiryAlerts ExpiryAlert[]
+
+  @@index([expiryDate])
+  @@index([productId, warehouseId])
+}
+
+// type: "IN" | "OUT" | "ADJUSTMENT" | "WASTE" | "TRANSFER"
+model StockMovement {
+  id         String   @id @default(cuid())
+  stockLotId String
+  stockLot   StockLot @relation(fields: [stockLotId], references: [id])
+  type       String
+  quantity   Int
+  notes      String?
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  createdAt  DateTime @default(now())
+
+  @@index([stockLotId])
+  @@index([createdAt])
+}
+
+// alertType: "DAYS_30" | "DAYS_15" | "DAYS_7" | "EXPIRED"
+model ExpiryAlert {
+  id         String   @id @default(cuid())
+  stockLotId String
+  stockLot   StockLot @relation(fields: [stockLotId], references: [id])
+  alertType  String
+  sentAt     DateTime @default(now())
+  isRead     Boolean  @default(false)
+
+  @@index([stockLotId])
+}
+
+model NotificationSetting {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id])
+  days30    Boolean  @default(true)
+  days15    Boolean  @default(true)
+  days7     Boolean  @default(true)
+  expired   Boolean  @default(true)
+  pushToken String?
+  updatedAt DateTime @updatedAt
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  action    String
+  entity    String
+  entityId  String
+  details   String?
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([createdAt])
+}
