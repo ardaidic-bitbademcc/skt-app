@@ -31,12 +31,6 @@
         {
           "cameraPermission": "Barkod okumak için kamera gerekli"
         }
-      ],
-      [
-        "expo-notifications",
-        {
-          "androidMode": "default"
-        }
       ]
     ],
     "extra": {
