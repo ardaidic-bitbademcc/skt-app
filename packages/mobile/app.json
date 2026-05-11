@@ -17,9 +17,7 @@
     },
     "android": {
       "package": "com.skt.takip",
-      "compileSdkVersion": 35,
-      "targetSdkVersion": 35,
-      "buildToolsVersion": "35.0.0",
+      "newArchEnabled": false,
       "permissions": [
         "CAMERA",
         "android.permission.CAMERA",
