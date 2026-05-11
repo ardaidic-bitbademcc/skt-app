@@ -32,7 +32,6 @@
           "cameraPermission": "Barkod okumak için kamera gerekli"
         }
       ],
-      "@react-native-community/datetimepicker",
       [
         "expo-notifications",
         {
