@@ -1,8 +1,8 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Modal,
   ScrollView, TextInput, Alert, ActivityIndicator,
-  KeyboardAvoidingView, Platform,
+  KeyboardAvoidingView, Platform, Vibration,
 } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -119,19 +119,45 @@ function DatePickerField({ value, onChange }: { value: string; onChange: (v: str
           {value ? formatDate(value) : 'SKT seçin…'}
         </Text>
       </TouchableOpacity>
-      {show && (
+
+      {/* iOS: tarih seçici taşmasın diye overlay modal */}
+      {Platform.OS === 'ios' && show && (
+        <Modal transparent animationType="slide" visible onRequestClose={() => setShow(false)}>
+          <TouchableOpacity
+            style={{ flex: 1, backgroundColor: '#00000055', justifyContent: 'flex-end' }}
+            activeOpacity={1}
+            onPress={() => setShow(false)}
+          >
+            <TouchableOpacity activeOpacity={1}
+              style={{ backgroundColor: '#fff', borderTopLeftRadius: 16, borderTopRightRadius: 16 }}
+            >
+              <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 16, paddingTop: 12 }}>
+                <TouchableOpacity onPress={() => setShow(false)} hitSlop={8}>
+                  <Text style={{ color: '#1d4ed8', fontWeight: '700', fontSize: 15 }}>Tamam</Text>
+                </TouchableOpacity>
+              </View>
+              <DateTimePicker
+                value={pickerDate}
+                mode="date"
+                display="spinner"
+                onChange={onDateChange}
+                minimumDate={new Date()}
+                style={{ width: '100%' }}
+              />
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </Modal>
+      )}
+
+      {/* Android: native dialog */}
+      {Platform.OS === 'android' && show && (
         <DateTimePicker
           value={pickerDate}
           mode="date"
-          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          display="default"
           onChange={onDateChange}
           minimumDate={new Date()}
         />
-      )}
-      {Platform.OS === 'ios' && show && (
-        <TouchableOpacity onPress={() => setShow(false)} style={{ alignSelf: 'flex-end', marginTop: 4 }}>
-          <Text style={{ color: '#1d4ed8', fontSize: 13, fontWeight: '600' }}>Tamam</Text>
-        </TouchableOpacity>
       )}
     </View>
   );
@@ -282,22 +308,45 @@ function ReceiveModal({
                 {form.expiryDate ? formatDate(form.expiryDate) : 'Tarih seçin…'}
               </Text>
             </TouchableOpacity>
-            {showDatePicker && (
+
+            {/* iOS: overlay modal — inline spinner ekrana sığmıyor */}
+            {Platform.OS === 'ios' && showDatePicker && (
+              <Modal transparent animationType="slide" visible onRequestClose={() => setShowDatePicker(false)}>
+                <TouchableOpacity
+                  style={{ flex: 1, backgroundColor: '#00000055', justifyContent: 'flex-end' }}
+                  activeOpacity={1}
+                  onPress={() => setShowDatePicker(false)}
+                >
+                  <TouchableOpacity activeOpacity={1}
+                    style={{ backgroundColor: '#fff', borderTopLeftRadius: 16, borderTopRightRadius: 16 }}
+                  >
+                    <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 16, paddingTop: 12 }}>
+                      <TouchableOpacity onPress={() => setShowDatePicker(false)} hitSlop={8}>
+                        <Text style={{ color: '#1d4ed8', fontWeight: '700', fontSize: 15 }}>Tamam</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <DateTimePicker
+                      value={pickerDate}
+                      mode="date"
+                      display="spinner"
+                      onChange={onDateChange}
+                      minimumDate={new Date()}
+                      style={{ width: '100%' }}
+                    />
+                  </TouchableOpacity>
+                </TouchableOpacity>
+              </Modal>
+            )}
+
+            {/* Android: native dialog */}
+            {Platform.OS === 'android' && showDatePicker && (
               <DateTimePicker
                 value={pickerDate}
                 mode="date"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                display="default"
                 onChange={onDateChange}
                 minimumDate={new Date()}
               />
-            )}
-            {Platform.OS === 'ios' && showDatePicker && (
-              <TouchableOpacity
-                onPress={() => setShowDatePicker(false)}
-                style={{ alignSelf: 'flex-end', marginTop: 4 }}
-              >
-                <Text style={{ color: '#1d4ed8', fontSize: 14, fontWeight: '600' }}>Tamam</Text>
-              </TouchableOpacity>
             )}
           </View>
 
@@ -440,7 +489,9 @@ function BatchModal({
         <View style={[s.modalHeader, { paddingTop: insets.top + 12 }]}>
           <View style={{ flex: 1 }}>
             <Text style={s.modalTitle}>📦 Toplu Stok Girişi</Text>
-            <Text style={s.modalSub}>{items.length} ürün tarandı</Text>
+            <Text style={s.modalSub}>
+              {items.reduce((s, it) => s + (parseInt(it.quantity, 10) || 1), 0)} adet · {items.length} çeşit
+            </Text>
           </View>
           <TouchableOpacity onPress={onClose} hitSlop={8} style={{ paddingLeft: 16 }}>
             <Text style={s.modalClose}>İptal</Text>
@@ -559,6 +610,10 @@ export default function ScanScreen() {
   const [batchModal,      setBatchModal]      = useState(false);
   const [batchSubmitting, setBatchSubmitting] = useState(false);
   const [batchErr,        setBatchErr]        = useState('');
+
+  // Her barkod için son okuma zamanını tutar — aynı barkodun kamera tarafından
+  // art arda birden çok tetiklenmesini (debounce) önler.
+  const scanCooldownRef = useRef<Map<string, number>>(new Map());
 
   // Depo + tedarikçi listelerini önceden çek
   const { data: warehouses = [] } = useQuery<Warehouse[]>({
@@ -706,9 +761,20 @@ export default function ScanScreen() {
 
       // ─── Toplu mod ──────────────────────────────────────────────────────────
       if (batchMode) {
+        // Debounce: aynı barkod 1500 ms içinde tekrar gelirse yoksay
+        // (kamera saniyede onlarca kez onBarcodeScanned tetikler)
+        const now = Date.now();
+        const lastScan = scanCooldownRef.current.get(barcode) ?? 0;
+        if (now - lastScan < 1500) {
+          setPaused(false);
+          return;
+        }
+        scanCooldownRef.current.set(barcode, now);
+
         // Aynı barkod zaten listede mi? → adeti artır
         const dup = batchItems.find((it) => it.barcode === barcode);
         if (dup) {
+          Vibration.vibrate(60); // kısa titreşim (dıt bildirimi)
           setBatchItems((prev) =>
             prev.map((it) =>
               it.barcode === barcode
@@ -722,6 +788,7 @@ export default function ScanScreen() {
 
         try {
           const { data: product } = await api.get<Product>(`/products/barcode/${barcode}`);
+          Vibration.vibrate(60); // kısa titreşim (dıt bildirimi)
           setBatchItems((prev) => [
             ...prev,
             {
@@ -911,7 +978,10 @@ export default function ScanScreen() {
           {/* Toplu modda taranan ürün sayısı */}
           {batchMode && batchItems.length > 0 && (
             <View style={s.batchBadge}>
-              <Text style={s.batchBadgeText}>{batchItems.length} ürün tarandı</Text>
+              <Text style={s.batchBadgeText}>
+                {batchItems.reduce((s, it) => s + (parseInt(it.quantity, 10) || 1), 0)} adet
+                {'  ·  '}{batchItems.length} çeşit
+              </Text>
             </View>
           )}
           {lotLoading && (
@@ -934,7 +1004,9 @@ export default function ScanScreen() {
           ) : batchMode && batchItems.length > 0 ? (
             <View style={s.batchBar}>
               <View style={{ flex: 1 }}>
-                <Text style={s.batchBarTitle}>{batchItems.length} ürün tarandı</Text>
+                <Text style={s.batchBarTitle}>
+                  {batchItems.reduce((s, it) => s + (parseInt(it.quantity, 10) || 1), 0)} adet · {batchItems.length} çeşit
+                </Text>
                 <Text style={s.batchBarSub} numberOfLines={1}>
                   {batchItems.map((it) => it.productName).join(', ')}
                 </Text>

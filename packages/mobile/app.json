@@ -17,10 +17,13 @@
     },
     "android": {
       "package": "com.skt.takip",
+      "compileSdkVersion": 35,
+      "targetSdkVersion": 35,
+      "buildToolsVersion": "35.0.0",
       "permissions": [
         "CAMERA",
         "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO"
+        "VIBRATE"
       ]
     },
     "plugins": [
@@ -31,7 +34,13 @@
           "cameraPermission": "Barkod okumak için kamera gerekli"
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-notifications",
+        {
+          "androidMode": "default"
+        }
+      ]
     ],
     "extra": {
       "router": {},
