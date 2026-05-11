@@ -1,6 +1,7 @@
 import React from 'react';
-import { Tabs } from 'expo-router';
+import { Tabs, Redirect } from 'expo-router';
 import { Text } from 'react-native';
+import { useAuth } from '../../lib/AuthContext';
 
 function TabIcon({ emoji, focused }: { emoji: string; focused: boolean }) {
   return (
@@ -11,6 +12,13 @@ function TabIcon({ emoji, focused }: { emoji: string; focused: boolean }) {
 }
 
 export default function TabsLayout() {
+  const { user, loading } = useAuth();
+
+  // Declarative auth guard: when token expires or logout fires, React re-renders
+  // and Redirect kicks in — safer than imperative router.replace from an axios interceptor
+  // while a modal is open.
+  if (!loading && !user) return <Redirect href="/(auth)/login" />;
+
   return (
     <Tabs
       screenOptions={{

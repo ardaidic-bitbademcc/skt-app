@@ -6,7 +6,9 @@
     "scheme": "skt",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "splash": { "backgroundColor": "#1d4ed8" },
+    "splash": {
+      "backgroundColor": "#1d4ed8"
+    },
     "ios": {
       "bundleIdentifier": "com.skt.takip",
       "infoPlist": {
@@ -15,11 +17,28 @@
     },
     "android": {
       "package": "com.skt.takip",
-      "permissions": ["CAMERA"]
+      "permissions": [
+        "CAMERA",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "plugins": [
       "expo-router",
-      ["expo-camera", { "cameraPermission": "Barkod okumak için kamera gerekli" }]
-    ]
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Barkod okumak için kamera gerekli"
+        }
+      ],
+      "@react-native-community/datetimepicker"
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "1f60b643-c0d8-4929-8072-c8091358eb3d"
+      }
+    },
+    "owner": "ardaidic"
   }
 }
