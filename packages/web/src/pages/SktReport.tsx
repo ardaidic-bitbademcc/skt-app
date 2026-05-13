@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as XLSX from 'xlsx';
 import api from '../lib/api';
 import { PageHeader } from '../components/PageHeader';
 import { Table, Column } from '../components/Table';
+import { Modal } from '../components/Modal';
 import { StatusBadge } from '../components/StatusBadge';
-import { formatDate, daysLeft } from '../lib/utils';
+import { formatDate, daysLeft, apiError } from '../lib/utils';
+import { getUser } from '../lib/auth';
 import type { StockLot, ExpiryStatus } from '../lib/types';
 
 const STATUS_OPTIONS: { value: ExpiryStatus | 'ALL'; label: string }[] = [
@@ -17,8 +19,28 @@ const STATUS_OPTIONS: { value: ExpiryStatus | 'ALL'; label: string }[] = [
 ];
 
 export default function SktReport() {
+  const qc = useQueryClient();
+  const user = getUser();
+  const isAdmin = user?.role === 'ADMIN';
+
   const [status, setStatus] = useState<ExpiryStatus | 'ALL'>('ALL');
   const [page, setPage] = useState(1);
+
+  // SKT düzenleme modal state
+  const [editLot, setEditLot] = useState<(StockLot & { id: string }) | null>(null);
+  const [editDate, setEditDate] = useState('');
+  const [editErr,  setEditErr]  = useState('');
+
+  const expiryMutation = useMutation({
+    mutationFn: ({ id, expiryDate }: { id: string; expiryDate: string }) =>
+      api.patch(`/stock/lots/${id}/expiry`, { expiryDate }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['alerts'] });
+      qc.invalidateQueries({ queryKey: ['alerts-summary'] });
+      setEditLot(null);
+    },
+    onError: (err) => setEditErr(apiError(err)),
+  });
 
   const { data, isLoading } = useQuery({
     queryKey: ['alerts', status, page],
@@ -75,7 +97,24 @@ export default function SktReport() {
     {
       key: 'expiryDate',
       header: 'SKT',
-      render: (r) => r.expiryDate ? formatDate(r.expiryDate) : '-',
+      render: (r) => (
+        <div className="flex items-center gap-2">
+          <span>{r.expiryDate ? formatDate(r.expiryDate) : '-'}</span>
+          {isAdmin && r.expiryDate && (
+            <button
+              title="SKT'yi düzenle"
+              onClick={() => {
+                setEditLot(r);
+                setEditDate(r.expiryDate!.split('T')[0]);
+                setEditErr('');
+              }}
+              className="text-gray-400 hover:text-blue-600 transition-colors"
+            >
+              ✎
+            </button>
+          )}
+        </div>
+      ),
     },
     {
       key: 'daysLeft',
@@ -169,6 +208,44 @@ export default function SktReport() {
           </div>
         )}
       </div>
+
+      {/* SKT Düzenleme Modal */}
+      <Modal open={!!editLot} onClose={() => setEditLot(null)} title="SKT Güncelle">
+        {editLot && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              setEditErr('');
+              expiryMutation.mutate({ id: editLot.id, expiryDate: editDate });
+            }}
+            className="space-y-4"
+          >
+            <div>
+              <p className="text-sm font-medium text-gray-900">{editLot.product?.name}</p>
+              <p className="text-xs text-gray-500 mt-0.5">{editLot.warehouse?.name} · Mevcut: {editLot.expiryDate ? formatDate(editLot.expiryDate) : '-'}</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Yeni Son Kullanma Tarihi</label>
+              <input
+                required
+                type="date"
+                value={editDate}
+                onChange={(e) => setEditDate(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            {editErr && <p className="text-sm text-red-600">{editErr}</p>}
+            <div className="flex justify-end gap-2 pt-2">
+              <button type="button" onClick={() => setEditLot(null)} className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50">
+                İptal
+              </button>
+              <button type="submit" disabled={expiryMutation.isPending} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
+                {expiryMutation.isPending ? 'Kaydediliyor...' : 'Kaydet'}
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
     </div>
   );
 }

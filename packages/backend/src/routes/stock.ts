@@ -481,4 +481,44 @@ router.post('/counts/:id/confirm', requireAdmin, async (req: Request, res: Respo
   }
 });
 
+// ─── PATCH /api/stock/lots/:id/expiry ─────────────────────────────────────────
+// Admin: stok lotunun SKT'sini düzelt ve durumu yeniden hesapla
+router.patch('/lots/:id/expiry', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const schema = z.object({
+      expiryDate: z.string().refine((v) => !isNaN(Date.parse(v)), { message: 'Geçerli tarih girin (YYYY-MM-DD)' }),
+    });
+    const { expiryDate: rawDate } = schema.parse(req.body);
+
+    const expiry = new Date(rawDate);
+    expiry.setUTCHours(0, 0, 0, 0);
+
+    const lot = await prisma.stockLot.findUnique({ where: { id: req.params.id } });
+    if (!lot) return res.status(404).json({ error: 'Lot bulunamadı' });
+    if (!lot.expiryDate) return res.status(400).json({ error: 'Sarf malzeme lotunun SKT\'si değiştirilemez' });
+
+    const newStatus = calcExpiryStatus(expiry);
+
+    const updated = await prisma.stockLot.update({
+      where: { id: req.params.id },
+      data: { expiryDate: expiry, status: newStatus },
+      select: { id: true, expiryDate: true, status: true, productId: true, warehouseId: true },
+    });
+
+    prisma.auditLog.create({
+      data: {
+        userId:   req.user!.id,
+        action:   'EXPIRY_UPDATE',
+        entity:   'StockLot',
+        entityId: lot.id,
+        details:  JSON.stringify({ oldExpiry: lot.expiryDate, newExpiry: expiry, newStatus }),
+      },
+    }).catch(() => {});
+
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;
