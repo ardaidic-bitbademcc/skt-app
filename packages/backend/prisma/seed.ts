@@ -64,7 +64,7 @@ async function main() {
   for (const def of products) {
     const product = await prisma.product.upsert({
       where: { id: `product-${def.barcode}` },
-      update: {},
+      update: { isActive: true },
       create: {
         id: `product-${def.barcode}`,
         name: def.name,

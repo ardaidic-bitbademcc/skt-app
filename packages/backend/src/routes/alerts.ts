@@ -20,11 +20,12 @@ router.get('/summary', async (req: Request, res: Response, next: NextFunction) =
         ? { branchId: req.user!.branchId }
         : {};
 
+    const activeProduct = { product: { isActive: true } };
     const [total, warning, critical, expired] = await Promise.all([
-      prisma.stockLot.count({ where: { quantity: { gt: 0 }, ...branchFilter } }),
-      prisma.stockLot.count({ where: { status: 'WARNING',  quantity: { gt: 0 }, ...branchFilter } }),
-      prisma.stockLot.count({ where: { status: 'CRITICAL', quantity: { gt: 0 }, ...branchFilter } }),
-      prisma.stockLot.count({ where: { status: 'EXPIRED',  quantity: { gt: 0 }, ...branchFilter } }),
+      prisma.stockLot.count({ where: { quantity: { gt: 0 }, ...activeProduct, ...branchFilter } }),
+      prisma.stockLot.count({ where: { status: 'WARNING',  quantity: { gt: 0 }, ...activeProduct, ...branchFilter } }),
+      prisma.stockLot.count({ where: { status: 'CRITICAL', quantity: { gt: 0 }, ...activeProduct, ...branchFilter } }),
+      prisma.stockLot.count({ where: { status: 'EXPIRED',  quantity: { gt: 0 }, ...activeProduct, ...branchFilter } }),
     ]);
     res.json({ total, warning, critical, expired });
   } catch (err) {
@@ -61,7 +62,10 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     const page   = Math.max(parseInt(req.query.page  as string || '1'), 1);
     const skip   = (page - 1) * limit;
 
-    const where: Record<string, any> = { quantity: { gt: 0 } };
+    const where: Record<string, any> = {
+      quantity: { gt: 0 },
+      product: { isActive: true },
+    };
 
     // Multi-tenancy: non-admin users see only their branch
     if (req.user!.role !== 'ADMIN' && req.user!.branchId) {
