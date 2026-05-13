@@ -9,16 +9,15 @@ import type { Product } from '../lib/types';
 
 interface ProductForm {
   name: string;
-  sku: string;
+  description: string;
   unit: string;
-  criticalDays: number;
-  warningDays: number;
   categoryId: string;
-  supplierId: string;
+  barcode: string;
+  minStock: string;
 }
 
 const EMPTY_FORM: ProductForm = {
-  name: '', sku: '', unit: 'adet', criticalDays: 7, warningDays: 30, categoryId: '', supplierId: '',
+  name: '', description: '', unit: 'adet', categoryId: '', barcode: '', minStock: '0',
 };
 
 export default function Products() {
@@ -38,10 +37,19 @@ export default function Products() {
   });
 
   const saveMutation = useMutation({
-    mutationFn: (payload: ProductForm) =>
-      selected
-        ? api.put(`/products/${selected.id}`, payload)
-        : api.post('/products', payload),
+    mutationFn: (payload: ProductForm) => {
+      const cleaned = {
+        name:        payload.name,
+        description: payload.description || undefined,
+        unit:        payload.unit,
+        categoryId:  payload.categoryId  || undefined,  // boş string backend validation'da hata verir
+        minStock:    parseInt(payload.minStock, 10) || 0,
+        ...(!selected && payload.barcode ? { barcode: payload.barcode } : {}),
+      };
+      return selected
+        ? api.put(`/products/${selected.id}`, cleaned)
+        : api.post('/products', cleaned);
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['products'] });
       closeModal();
@@ -51,12 +59,23 @@ export default function Products() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/products/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['products'] }),
+    onMutate: async (id) => {
+      await qc.cancelQueries({ queryKey: ['products'] });
+      const prev = qc.getQueryData(['products', search, page]);
+      qc.setQueryData(['products', search, page], (old: any) =>
+        old ? { ...old, data: old.data.filter((p: Product) => p.id !== id), total: old.total - 1 } : old
+      );
+      return { prev };
+    },
+    onError: (_err, _id, ctx) => {
+      if (ctx?.prev) qc.setQueryData(['products', search, page], ctx.prev);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['products'] }),
   });
 
   const barcodeMutation = useMutation({
     mutationFn: ({ id, code }: { id: string; code: string }) =>
-      api.post(`/products/${id}/barcodes`, { code }),
+      api.post(`/products/${id}/barcodes`, { barcode: code }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['products'] });
       setBarcodeInput('');
@@ -76,12 +95,11 @@ export default function Products() {
     setSelected(p);
     setForm({
       name: p.name,
-      sku: p.sku ?? '',
+      description: p.description ?? '',
       unit: p.unit,
-      criticalDays: p.criticalDays,
-      warningDays: p.warningDays,
       categoryId: p.categoryId ?? '',
-      supplierId: p.supplierId ?? '',
+      barcode: '',      // barkod edit modda ayrı "Barkod" butonu ile yönetilir
+      minStock: String((p as any).minStock ?? 0),
     });
     setFormError('');
     setModal('edit');
@@ -108,14 +126,13 @@ export default function Products() {
 
   const columns: Column<Product>[] = [
     { key: 'name', header: 'Ürün Adı' },
-    { key: 'sku', header: 'SKU', render: (r) => r.sku ?? '-' },
     { key: 'unit', header: 'Birim' },
     {
       key: 'barcodes',
       header: 'Barkodlar',
       render: (r) => (
         <span className="text-xs text-gray-500">
-          {r.barcodes?.length ? r.barcodes.map((b: any) => b.code).join(', ') : '-'}
+          {r.barcodes?.length ? r.barcodes.map((b: any) => b.barcode).join(', ') : '-'}
         </span>
       ),
     },
@@ -174,9 +191,9 @@ export default function Products() {
           className="w-64 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
 
-        <Table columns={columns} data={data?.items ?? []} loading={isLoading} />
+        <Table columns={columns} data={data?.data ?? []} loading={isLoading} />
 
-        {data && data.totalPages > 1 && (
+        {data && Math.ceil(data.total / (data.limit ?? 20)) > 1 && (
           <div className="flex gap-2 justify-end">
             <button
               disabled={page === 1}
@@ -186,10 +203,10 @@ export default function Products() {
               Önceki
             </button>
             <span className="px-3 py-1.5 text-sm text-gray-600">
-              {page} / {data.totalPages}
+              {page} / {Math.ceil(data.total / (data.limit ?? 20))}
             </span>
             <button
-              disabled={page === data.totalPages}
+              disabled={page === Math.ceil(data.total / (data.limit ?? 20))}
               onClick={() => setPage((p) => p + 1)}
               className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg disabled:opacity-40 hover:bg-gray-50"
             >
@@ -215,42 +232,47 @@ export default function Products() {
             />
           </Field>
           <div className="grid grid-cols-2 gap-4">
-            <Field label="SKU">
-              <input
-                value={form.sku}
-                onChange={(e) => setForm({ ...form, sku: e.target.value })}
-                className={INPUT}
-              />
-            </Field>
             <Field label="Birim *">
-              <input
+              <select
                 required
                 value={form.unit}
                 onChange={(e) => setForm({ ...form, unit: e.target.value })}
                 className={INPUT}
+              >
+                {UNITS.map((u) => (
+                  <option key={u} value={u}>{u}</option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Minimum Stok">
+              <input
+                type="number"
+                min="0"
+                value={form.minStock}
+                onChange={(e) => setForm({ ...form, minStock: e.target.value })}
+                className={INPUT}
+                placeholder="0"
               />
             </Field>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Kritik Gün">
+          {modal === 'add' && (
+            <Field label="Barkod Numarası">
               <input
-                type="number"
-                min={1}
-                value={form.criticalDays}
-                onChange={(e) => setForm({ ...form, criticalDays: +e.target.value })}
+                value={form.barcode}
+                onChange={(e) => setForm({ ...form, barcode: e.target.value })}
                 className={INPUT}
+                placeholder="Örn: 8690000000001 (opsiyonel)"
               />
             </Field>
-            <Field label="Uyarı Günü">
-              <input
-                type="number"
-                min={1}
-                value={form.warningDays}
-                onChange={(e) => setForm({ ...form, warningDays: +e.target.value })}
-                className={INPUT}
-              />
-            </Field>
-          </div>
+          )}
+          <Field label="Açıklama">
+            <input
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              className={INPUT}
+              placeholder="Opsiyonel"
+            />
+          </Field>
           {formError && <p className="text-sm text-red-600">{formError}</p>}
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={closeModal} className={BTN_SECONDARY}>İptal</button>
@@ -265,11 +287,12 @@ export default function Products() {
       <Modal open={modal === 'barcode'} onClose={closeModal} title="Barkod Yönetimi">
         <div className="space-y-4">
           <p className="text-sm text-gray-600">{selected?.name}</p>
+          <Field label="Barkod Numarası Ekle">
           <div className="flex gap-2">
             <input
               value={barcodeInput}
               onChange={(e) => setBarcodeInput(e.target.value)}
-              placeholder="Barkod numarası"
+              placeholder="Örn: 8690000000001"
               className={`${INPUT} flex-1`}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && barcodeInput.trim() && selected) {
@@ -285,10 +308,11 @@ export default function Products() {
               Ekle
             </button>
           </div>
+          </Field>
           {formError && <p className="text-sm text-red-600">{formError}</p>}
           <ul className="divide-y divide-gray-100">
             {selected?.barcodes?.map((b: any) => (
-              <li key={b.id} className="py-2 text-sm text-gray-700 font-mono">{b.code}</li>
+              <li key={b.id} className="py-2 text-sm text-gray-700 font-mono">{b.barcode}</li>
             ))}
             {!selected?.barcodes?.length && (
               <li className="py-4 text-center text-sm text-gray-400">Barkod yok</li>
@@ -309,6 +333,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
+const UNITS = ['adet', 'kg', 'lt', 'kutu', 'paket', 'koli'];
 const INPUT = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 const BTN_PRIMARY = 'bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50';
 const BTN_SECONDARY = 'border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50';

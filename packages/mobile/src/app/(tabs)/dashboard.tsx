@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
   RefreshControl, TouchableOpacity, ActivityIndicator,
+  Modal, FlatList,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
@@ -9,7 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import api from '../../lib/api';
 import { useAuth } from '../../lib/AuthContext';
 import { formatDate, daysLeftLabel, STATUS_COLOR, STATUS_BG } from '../../lib/utils';
-import { AlertSummary, StockLot, ExpiryStatus } from '../../types';
+import { AlertSummary, StockLot, ExpiryStatus, Product } from '../../types';
 import StatusBadge from '../../components/StatusBadge';
 
 // ─── Stat Kartı ──────────────────────────────────────────────────────────────
@@ -29,12 +30,16 @@ function StatCard({
 
 // ─── Lot Satırı ──────────────────────────────────────────────────────────────
 
-function LotRow({ lot }: { lot: StockLot }) {
+function LotRow({ lot, onPress }: { lot: StockLot; onPress: () => void }) {
   const st  = lot.status as ExpiryStatus;
   const col = STATUS_COLOR[st];
   const bg  = STATUS_BG[st];
   return (
-    <View style={[s.lotRow, { borderLeftColor: col, backgroundColor: bg }]}>
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.75}
+      style={[s.lotRow, { borderLeftColor: col, backgroundColor: bg }]}
+    >
       <View style={s.lotMain}>
         <Text style={s.lotName} numberOfLines={1}>{lot.product.name}</Text>
         <Text style={s.lotMeta}>
@@ -48,7 +53,132 @@ function LotRow({ lot }: { lot: StockLot }) {
           {daysLeftLabel(lot.expiryDate)}
         </Text>
       </View>
+    </TouchableOpacity>
+  );
+}
+
+// ─── Ürün Detay Satırı ────────────────────────────────────────────────────────
+
+interface DetailLot {
+  id: string;
+  expiryDate: string;
+  quantity: number;
+  status: ExpiryStatus;
+  lotNumber: string | null;
+  warehouse: { id: string; name: string };
+  supplier:  { id: string; name: string } | null;
+}
+
+function DetailLotRow({ lot, unit }: { lot: DetailLot; unit: string }) {
+  const st  = lot.status as ExpiryStatus;
+  const col = STATUS_COLOR[st];
+  const bg  = STATUS_BG[st];
+  return (
+    <View style={[s.detailLotRow, { borderLeftColor: col, backgroundColor: bg }]}>
+      <View style={{ flex: 1 }}>
+        <Text style={s.detailWarehouse}>{lot.warehouse.name}</Text>
+        {lot.lotNumber ? (
+          <Text style={s.detailLotNo}>Lot: {lot.lotNumber}</Text>
+        ) : null}
+        {lot.supplier ? (
+          <Text style={s.detailSupplier}>Tedarikçi: {lot.supplier.name}</Text>
+        ) : null}
+        <Text style={s.detailExpiry}>SKT: {formatDate(lot.expiryDate)}</Text>
+      </View>
+      <View style={{ alignItems: 'flex-end', gap: 4 }}>
+        <Text style={s.detailQty}>{lot.quantity} {unit}</Text>
+        <StatusBadge status={st} size="sm" />
+        <Text style={[s.detailDays, { color: col }]}>{daysLeftLabel(lot.expiryDate)}</Text>
+      </View>
     </View>
+  );
+}
+
+// ─── Ürün Detay Modal ─────────────────────────────────────────────────────────
+
+function ProductDetailModal({
+  productId,
+  onClose,
+}: {
+  productId: string | null;
+  onClose: () => void;
+}) {
+  const { data, isLoading } = useQuery<Product & { stockLots: DetailLot[] }>({
+    queryKey: ['product-detail', productId],
+    queryFn:  () => api.get(`/products/${productId}`).then((r) => r.data),
+    enabled:  !!productId,
+  });
+
+  const activeLots = (data?.stockLots ?? []).filter((l) => l.quantity > 0);
+  const totalStock = activeLots.reduce((s, l) => s + l.quantity, 0);
+
+  return (
+    <Modal
+      visible={!!productId}
+      animationType="slide"
+      transparent
+      onRequestClose={onClose}
+    >
+      <View style={s.modalOverlay}>
+        <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={onClose} />
+        <View style={s.modalSheet}>
+          {/* Handle */}
+          <View style={s.modalHandle} />
+
+          {isLoading ? (
+            <ActivityIndicator color="#1d4ed8" style={{ marginVertical: 40 }} />
+          ) : !data ? (
+            <Text style={s.modalEmpty}>Ürün bulunamadı</Text>
+          ) : (
+            <>
+              {/* Başlık */}
+              <View style={s.modalHeader}>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.modalProductName}>{data.name}</Text>
+                  {data.description ? (
+                    <Text style={s.modalDesc}>{data.description}</Text>
+                  ) : null}
+                </View>
+                <View style={s.modalTotalBadge}>
+                  <Text style={s.modalTotalText}>{totalStock} {data.unit}</Text>
+                  <Text style={s.modalTotalLabel}>toplam</Text>
+                </View>
+              </View>
+
+              {/* Barkodlar */}
+              {data.barcodes?.length ? (
+                <Text style={s.modalBarcodes}>
+                  🔖 {data.barcodes.map((b: any) => b.barcode).join('  ·  ')}
+                </Text>
+              ) : null}
+
+              {/* Lot listesi */}
+              <Text style={s.modalSectionTitle}>
+                Stok Lotları ({activeLots.length} lot)
+              </Text>
+
+              {activeLots.length === 0 ? (
+                <View style={s.modalEmptyBox}>
+                  <Text style={s.modalEmpty}>Stokta ürün yok</Text>
+                </View>
+              ) : (
+                <FlatList
+                  data={activeLots}
+                  keyExtractor={(l) => l.id}
+                  renderItem={({ item }) => <DetailLotRow lot={item} unit={data.unit} />}
+                  style={{ maxHeight: 380 }}
+                  showsVerticalScrollIndicator={false}
+                />
+              )}
+
+              <TouchableOpacity onPress={onClose} style={s.modalCloseBtn}>
+                <Text style={s.modalCloseTxt}>Kapat</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -57,6 +187,7 @@ function LotRow({ lot }: { lot: StockLot }) {
 export default function DashboardScreen() {
   const { user, logout } = useAuth();
   const insets           = useSafeAreaInsets();
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
 
   const summary = useQuery<AlertSummary>({
     queryKey: ['alert-summary'],
@@ -141,9 +272,20 @@ export default function DashboardScreen() {
             <Text style={s.emptyText}>Uyarı yok</Text>
           </View>
         ) : (
-          alerts.data?.data.map((lot) => <LotRow key={lot.id} lot={lot} />)
+          alerts.data?.data.map((lot) => (
+            <LotRow
+              key={lot.id}
+              lot={lot}
+              onPress={() => setSelectedProductId(lot.productId)}
+            />
+          ))
         )}
       </ScrollView>
+
+      <ProductDetailModal
+        productId={selectedProductId}
+        onClose={() => setSelectedProductId(null)}
+      />
     </View>
   );
 }
@@ -228,7 +370,92 @@ const s = StyleSheet.create({
   lotDays:  { fontSize: 11, fontWeight: '600', marginTop: 2 },
 
   // Empty
-  emptyBox:  { alignItems: 'center', paddingVertical: 32 },
+  emptyBox:   { alignItems: 'center', paddingVertical: 32 },
   emptyEmoji: { fontSize: 40 },
-  emptyText: { fontSize: 14, color: '#9ca3af', marginTop: 8 },
+  emptyText:  { fontSize: 14, color: '#9ca3af', marginTop: 8 },
+
+  // Modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: '#00000066',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    padding: 20,
+    paddingBottom: 36,
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#d1d5db',
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 6,
+  },
+  modalProductName: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  modalDesc: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginTop: 3,
+  },
+  modalTotalBadge: {
+    backgroundColor: '#1d4ed8',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    alignItems: 'center',
+    marginLeft: 12,
+  },
+  modalTotalText:  { color: '#fff', fontWeight: '800', fontSize: 15 },
+  modalTotalLabel: { color: '#93c5fd', fontSize: 10, marginTop: 1 },
+  modalBarcodes: {
+    fontSize: 11,
+    color: '#6b7280',
+    marginBottom: 14,
+  },
+  modalSectionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#374151',
+    marginBottom: 10,
+  },
+  modalEmptyBox: { alignItems: 'center', paddingVertical: 20 },
+  modalEmpty:    { fontSize: 13, color: '#9ca3af', textAlign: 'center' },
+  modalCloseBtn: {
+    marginTop: 16,
+    backgroundColor: '#f3f4f6',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  modalCloseTxt: { fontSize: 15, fontWeight: '700', color: '#374151' },
+
+  // Detail Lot Row
+  detailLotRow: {
+    borderLeftWidth: 3,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  detailWarehouse: { fontSize: 13, fontWeight: '700', color: '#111827' },
+  detailLotNo:     { fontSize: 11, color: '#6b7280', marginTop: 2 },
+  detailSupplier:  { fontSize: 11, color: '#6b7280', marginTop: 1 },
+  detailExpiry:    { fontSize: 11, color: '#9ca3af', marginTop: 2 },
+  detailQty:       { fontSize: 14, fontWeight: '800' },
+  detailDays:      { fontSize: 11, fontWeight: '600' },
 });

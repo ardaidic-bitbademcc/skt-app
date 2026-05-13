@@ -1,12 +1,15 @@
-// SQLite enum desteklemez — tipler String olarak saklanır,
-// doğrulama Zod + TypeScript katmanında yapılır.
+// Tipler String olarak saklanır (eski SQLite uyumluluğu gerekmiyor).
+// Doğrulama Zod + TypeScript katmanında yapılır.
 generator client {
   provider = "prisma-client-js"
+  output = "../generated/client"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")       // pooler — Vercel serverless runtime
+  directUrl = env("DIRECT_DATABASE_URL") // direct — prisma db push / seed
 }
 
 // role: "ADMIN" | "STAFF" | "VIEWER"

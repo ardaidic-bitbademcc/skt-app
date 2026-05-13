@@ -2,9 +2,10 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { clearAuth, getUser } from '../lib/auth';
 
 const NAV = [
-  { to: '/products', label: 'Ürünler' },
+  { to: '/products',     label: 'Ürünler' },
+  { to: '/warehouses',   label: 'Depolar' },
   { to: '/excel-import', label: 'Excel İçe Aktar' },
-  { to: '/skt-report', label: 'SKT Raporu' },
+  { to: '/skt-report',   label: 'SKT Raporu' },
 ];
 
 export function Layout() {

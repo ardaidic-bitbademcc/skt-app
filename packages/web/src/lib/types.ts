@@ -11,16 +11,12 @@ export interface ProductBarcode { id: string; barcode: string; isPrimary: boolea
 export interface Product {
   id: string;
   name: string;
-  sku: string | null;
   description: string | null;
   unit: string;
   minStock: number;
-  criticalDays: number;
-  warningDays: number;
   isActive: boolean;
   createdAt: string;
   categoryId: string | null;
-  supplierId: string | null;
   category: Category | null;
   barcodes: ProductBarcode[];
   totalStock?: number;

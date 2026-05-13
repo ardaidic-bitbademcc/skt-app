@@ -1,10 +1,13 @@
 import { useRef, useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import * as XLSX from 'xlsx';
 import api from '../lib/api';
 import { PageHeader } from '../components/PageHeader';
 import { Table, Column } from '../components/Table';
 import { apiError } from '../lib/utils';
+import type { Warehouse } from '../lib/types';
+
+const UNITS = ['adet', 'kg', 'lt', 'kutu', 'paket', 'koli'];
 
 interface PreviewRow {
   name: string;
@@ -34,6 +37,11 @@ export default function ExcelImport() {
   const [result, setResult] = useState<{ created: number; updated: number } | null>(null);
   const [error, setError] = useState('');
 
+  const { data: warehouses = [] } = useQuery<Warehouse[]>({
+    queryKey: ['warehouses'],
+    queryFn:  () => api.get('/warehouses').then((r) => r.data),
+  });
+
   const importMutation = useMutation({
     mutationFn: () => api.post('/excel/import', { rows }),
     onSuccess: (res) => {
@@ -45,12 +53,47 @@ export default function ExcelImport() {
   });
 
   function downloadTemplate() {
-    const ws = XLSX.utils.aoa_to_sheet([
-      ['name', 'sku', 'barcode', 'unit', 'expiryDate', 'quantity', 'warehouseId'],
-      ['Örnek Ürün', 'SKU-001', '8690000000001', 'adet', '2025-12-31', 10, 'warehouse-main'],
-    ]);
     const wb = XLSX.utils.book_new();
+
+    // ── 1. Şablon sayfası ──────────────────────────────────────────────────
+    const wsData = [
+      ['name',         'sku',     'barcode',         'unit', 'expiryDate', 'quantity', 'warehouseId'],
+      ['Örnek Ürün A', 'SKU-001', '8690000000001',   'adet',  '2025-12-31', 10,        warehouses[0]?.id ?? 'warehouse-main'],
+      ['Örnek Ürün B', 'SKU-002', '8690000000002',   'kg',    '2026-03-15', 5,         warehouses[0]?.id ?? 'warehouse-main'],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+    // Sütun genişlikleri
+    ws['!cols'] = [
+      { wch: 25 }, { wch: 12 }, { wch: 18 },
+      { wch: 10 }, { wch: 13 }, { wch: 10 }, { wch: 30 },
+    ];
+
+    // Birim sütunu (D) için data validation (dropdown)
+    if (!ws['!dataValidation']) ws['!dataValidation'] = [];
+    ws['!dataValidation'].push({
+      sqref: 'D2:D1000',
+      type: 'list',
+      formula1: `"${UNITS.join(',')}"`,
+      showDropDown: false,
+      error: 'Geçersiz birim',
+      errorTitle: 'Hata',
+      prompt: 'Listeden seçin',
+    });
+
     XLSX.utils.book_append_sheet(wb, ws, 'Şablon');
+
+    // ── 2. Depolar referans sayfası ────────────────────────────────────────
+    if (warehouses.length > 0) {
+      const refData = [
+        ['warehouseId', 'Depo Adı'],
+        ...warehouses.map((w) => [w.id, w.name]),
+      ];
+      const wsRef = XLSX.utils.aoa_to_sheet(refData);
+      wsRef['!cols'] = [{ wch: 36 }, { wch: 25 }];
+      XLSX.utils.book_append_sheet(wb, wsRef, 'Depolar');
+    }
+
     XLSX.writeFile(wb, 'skt_import_sablonu.xlsx');
   }
 

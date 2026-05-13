@@ -4,14 +4,17 @@
   "private": true,
   "workspaces": [
     "packages/backend",
-    "packages/web",
-    "packages/mobile"
+    "packages/web"
   ],
   "scripts": {
     "dev:backend": "npm run dev --workspace=packages/backend",
     "dev:web": "npm run dev --workspace=packages/web",
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:web\"",
-    "build": "npm run build --workspaces"
+    "build": "npm run build --workspaces",
+    "mobile": "cd packages/mobile && npx expo start",
+    "mobile:ios": "cd packages/mobile && npx expo start --ios",
+    "mobile:android": "cd packages/mobile && npx expo start --android",
+    "mobile:clear": "cd packages/mobile && npx expo start --clear"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

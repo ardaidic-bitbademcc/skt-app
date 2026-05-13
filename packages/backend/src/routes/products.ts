@@ -197,12 +197,12 @@ router.put('/:id', requireAdmin, async (req: Request, res: Response, next: NextF
       select: productSelect,
     });
 
-    await prisma.auditLog.create({
+    prisma.auditLog.create({
       data: {
         userId: req.user!.id, action: 'UPDATE', entity: 'Product',
         entityId: product.id, details: JSON.stringify(data),
       },
-    });
+    }).catch(() => {/* auditLog hatası ana işlemi engellemez */});
 
     res.json(product);
   } catch (err) {
@@ -220,9 +220,9 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response, next: Ne
   try {
     await prisma.product.update({ where: { id: req.params.id }, data: { isActive: false } });
 
-    await prisma.auditLog.create({
+    prisma.auditLog.create({
       data: { userId: req.user!.id, action: 'DELETE', entity: 'Product', entityId: req.params.id },
-    });
+    }).catch(() => {/* auditLog hatası ana işlemi engellemez */});
 
     res.json({ ok: true });
   } catch (err) {

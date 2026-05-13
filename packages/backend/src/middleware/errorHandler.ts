@@ -23,6 +23,11 @@ export function errorHandler(err: any, _req: Request, res: Response, _next: Next
     return res.status(404).json({ error: 'Kayıt bulunamadı' });
   }
 
+  // Prisma foreign key constraint failed
+  if (err.code === 'P2003') {
+    return res.status(400).json({ error: 'İlişkili kayıt bulunamadı' });
+  }
+
   const status = err.status ?? 500;
   const message = status < 500 ? err.message : 'Sunucu hatası';
   res.status(status).json({ error: message });

@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../generated/client';
 import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
@@ -17,19 +17,19 @@ async function main() {
     create: { id: 'warehouse-main', name: 'Ana Depo', branchId: branch.id },
   });
 
-  // Kullanıcılar
+  // Kullanıcılar — stable ID'ler: DB reset sonrası eski JWT token'lar çalışmaya devam eder
   const adminPw = await bcrypt.hash('admin123', 10);
   const admin = await prisma.user.upsert({
-    where: { email: 'admin@skt.app' },
+    where: { id: 'user-admin' },
     update: {},
-    create: { email: 'admin@skt.app', password: adminPw, name: 'Admin', role: 'ADMIN' as string, branchId: branch.id },
+    create: { id: 'user-admin', email: 'admin@skt.app', password: adminPw, name: 'Admin', role: 'ADMIN' as string, branchId: branch.id },
   });
 
   const staffPw = await bcrypt.hash('staff123', 10);
   await prisma.user.upsert({
-    where: { email: 'staff@skt.app' },
+    where: { id: 'user-staff' },
     update: {},
-    create: { email: 'staff@skt.app', password: staffPw, name: 'Personel', role: 'STAFF', branchId: branch.id },
+    create: { id: 'user-staff', email: 'staff@skt.app', password: staffPw, name: 'Personel', role: 'STAFF', branchId: branch.id },
   });
 
   // Kategoriler

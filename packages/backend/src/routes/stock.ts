@@ -10,7 +10,14 @@ router.use(authenticate);
 // ─── Schema ──────────────────────────────────────────────────────────────────
 
 const ReceiveSchema = z.object({
-  productId:   z.string().min(1, 'Ürün ID zorunlu'),
+  // productId VEYA (productBarcode + productName) zorunlu.
+  // Yeni ürün akışında mobil, ürün oluşturma + stok eklemeyi TEK requestte gönderir;
+  // böylece Vercel serverless'ta farklı instance'a düşme riski ortadan kalkar.
+  productId:      z.string().min(1).optional(),
+  productBarcode: z.string().min(1).max(100).optional(),
+  productName:    z.string().min(1).max(200).optional(),
+  productUnit:    z.enum(['adet', 'kg', 'lt', 'kutu', 'paket', 'koli']).optional(),
+
   warehouseId: z.string().min(1, 'Depo ID zorunlu'),
   branchId:    z.string().min(1, 'Şube ID zorunlu'),
   supplierId:  z.string().min(1).optional(),
@@ -21,7 +28,10 @@ const ReceiveSchema = z.object({
   quantity:    z.number().int().positive('Adet 0\'dan büyük olmalı'),
   lotNumber:   z.string().max(50).optional(),
   notes:       z.string().max(300).optional(),
-});
+}).refine(
+  (d) => d.productId || (d.productBarcode && d.productName),
+  { message: 'productId veya productBarcode+productName zorunlu' },
+);
 
 // ─── POST /api/stock/receive ──────────────────────────────────────────────────
 /*
@@ -80,18 +90,50 @@ router.post('/receive', async (req: Request, res: Response, next: NextFunction) 
     const expiryDate = new Date(body.expiryDate);
     expiryDate.setUTCHours(0, 0, 0, 0); // gün bazında karşılaştırma
 
+    // ─── Ürün çözümleme (atomic) ──────────────────────────────────────────────
+    // productId yoksa barcode+name ile ürünü bul ya da oluştur.
+    // Böylece Vercel serverless'ta ürün oluşturma + stok ekleme TEK transaction'da
+    // gerçekleşir ve farklı /tmp instance'larına düşme sorunu ortadan kalkar.
+    let resolvedProductId = body.productId;
+    if (!resolvedProductId) {
+      const existing = await prisma.productBarcode.findUnique({
+        where: { barcode: body.productBarcode! },
+        select: { productId: true },
+      });
+      if (existing) {
+        resolvedProductId = existing.productId;
+      } else {
+        const created = await prisma.product.create({
+          data: {
+            name:    body.productName!,
+            unit:    body.productUnit ?? 'adet',
+            barcodes: { create: { barcode: body.productBarcode!, isPrimary: true } },
+          },
+          select: { id: true },
+        });
+        resolvedProductId = created.id;
+      }
+    }
+
     const [product, warehouse] = await Promise.all([
-      prisma.product.findUnique({ where: { id: body.productId, isActive: true } }),
+      prisma.product.findUnique({ where: { id: resolvedProductId!, isActive: true } }),
       prisma.warehouse.findUnique({ where: { id: body.warehouseId, isActive: true } }),
     ]);
 
     if (!product)   return res.status(400).json({ error: 'Ürün bulunamadı' });
     if (!warehouse) return res.status(400).json({ error: 'Depo bulunamadı' });
 
+    // Multi-tenancy: non-ADMIN users can only stock their own branch
+    if (req.user!.role !== 'ADMIN' && req.user!.branchId) {
+      if (warehouse.branchId !== req.user!.branchId) {
+        return res.status(403).json({ error: 'Bu depoya erişim yetkiniz yok' });
+      }
+    }
+
     const status = calcExpiryStatus(expiryDate);
 
     const existingLot = await prisma.stockLot.findFirst({
-      where: { productId: body.productId, warehouseId: body.warehouseId, expiryDate },
+      where: { productId: resolvedProductId!, warehouseId: body.warehouseId, expiryDate },
     });
 
     let lot;
@@ -110,7 +152,7 @@ router.post('/receive', async (req: Request, res: Response, next: NextFunction) 
     } else {
       lot = await prisma.stockLot.create({
         data: {
-          productId:   body.productId,
+          productId:   resolvedProductId!,
           warehouseId: body.warehouseId,
           branchId:    body.branchId,
           supplierId:  body.supplierId,
@@ -145,7 +187,7 @@ router.post('/receive', async (req: Request, res: Response, next: NextFunction) 
       },
     });
 
-    res.status(isNew ? 201 : 200).json({ lot: { ...lot, isNew }, movement });
+    res.status(isNew ? 201 : 200).json({ lot: { ...lot, isNew }, movement, productId: resolvedProductId });
   } catch (err) {
     next(err);
   }

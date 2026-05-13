@@ -5,6 +5,7 @@ import Login from './pages/Login';
 import Products from './pages/Products';
 import ExcelImport from './pages/ExcelImport';
 import SktReport from './pages/SktReport';
+import Warehouses from './pages/Warehouses';
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   return getUser() ? <>{children}</> : <Navigate to="/login" replace />;
@@ -23,9 +24,10 @@ export default function App() {
           }
         >
           <Route index element={<Navigate to="/products" replace />} />
-          <Route path="products" element={<Products />} />
+          <Route path="products"     element={<Products />} />
+          <Route path="warehouses"   element={<Warehouses />} />
           <Route path="excel-import" element={<ExcelImport />} />
-          <Route path="skt-report" element={<SktReport />} />
+          <Route path="skt-report"   element={<SktReport />} />
         </Route>
         <Route path="*" element={<Navigate to="/products" replace />} />
       </Routes>

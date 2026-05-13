@@ -2,7 +2,13 @@ import axios from 'axios';
 
 // Dev: Vite proxy /api → localhost:3001
 // Prod (Vercel): VITE_API_URL=https://xxx.up.railway.app/api
-const api = axios.create({ baseURL: import.meta.env.VITE_API_URL ?? '/api' });
+function normalizeBaseUrl(raw?: string): string {
+  if (!raw) return '/api';
+  const trimmed = raw.trim().replace(/\/+$/, '');
+  return trimmed.endsWith('/api') ? trimmed : `${trimmed}/api`;
+}
+
+const api = axios.create({ baseURL: normalizeBaseUrl(import.meta.env.VITE_API_URL) });
 
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');

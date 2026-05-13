@@ -12,13 +12,19 @@ router.use(authenticate);
   Response 200:
     { "total": 12, "warning": 3, "critical": 2, "expired": 1 }
 */
-router.get('/summary', async (_req: Request, res: Response, next: NextFunction) => {
+router.get('/summary', async (req: Request, res: Response, next: NextFunction) => {
   try {
+    // Multi-tenancy: non-admin users see only their branch
+    const branchFilter =
+      req.user!.role !== 'ADMIN' && req.user!.branchId
+        ? { branchId: req.user!.branchId }
+        : {};
+
     const [total, warning, critical, expired] = await Promise.all([
-      prisma.stockLot.count({ where: { quantity: { gt: 0 } } }),
-      prisma.stockLot.count({ where: { status: 'WARNING',  quantity: { gt: 0 } } }),
-      prisma.stockLot.count({ where: { status: 'CRITICAL', quantity: { gt: 0 } } }),
-      prisma.stockLot.count({ where: { status: 'EXPIRED',  quantity: { gt: 0 } } }),
+      prisma.stockLot.count({ where: { quantity: { gt: 0 }, ...branchFilter } }),
+      prisma.stockLot.count({ where: { status: 'WARNING',  quantity: { gt: 0 }, ...branchFilter } }),
+      prisma.stockLot.count({ where: { status: 'CRITICAL', quantity: { gt: 0 }, ...branchFilter } }),
+      prisma.stockLot.count({ where: { status: 'EXPIRED',  quantity: { gt: 0 }, ...branchFilter } }),
     ]);
     res.json({ total, warning, critical, expired });
   } catch (err) {
@@ -52,8 +58,15 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const status = req.query.status as string | undefined;
     const limit  = Math.min(parseInt(req.query.limit as string || '20'), 100);
+    const page   = Math.max(parseInt(req.query.page  as string || '1'), 1);
+    const skip   = (page - 1) * limit;
 
     const where: Record<string, any> = { quantity: { gt: 0 } };
+
+    // Multi-tenancy: non-admin users see only their branch
+    if (req.user!.role !== 'ADMIN' && req.user!.branchId) {
+      where.branchId = req.user!.branchId;
+    }
 
     if (status) {
       where.status = status;
@@ -64,6 +77,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     const [data, total] = await Promise.all([
       prisma.stockLot.findMany({
         where,
+        skip,
         take: limit,
         orderBy: { expiryDate: 'asc' }, // FEFO
         select: {
@@ -84,7 +98,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       prisma.stockLot.count({ where }),
     ]);
 
-    res.json({ data, total });
+    res.json({ data, total, page, limit });
   } catch (err) {
     next(err);
   }

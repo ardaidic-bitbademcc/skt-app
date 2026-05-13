@@ -40,10 +40,9 @@ export default function SktReport() {
   });
 
   function exportExcel() {
-    if (!data?.items?.length) return;
-    const rows = data.items.map((lot: StockLot) => ({
+    if (!data?.data?.length) return;
+    const rows = data.data.map((lot: StockLot) => ({
       'Ürün': lot.product?.name ?? '-',
-      'SKU': lot.product?.sku ?? '-',
       'Depo': lot.warehouse?.name ?? '-',
       'Miktar': lot.quantity,
       'Birim': lot.product?.unit ?? '-',
@@ -64,7 +63,6 @@ export default function SktReport() {
       render: (r) => (
         <div>
           <p className="font-medium text-gray-900">{r.product?.name ?? '-'}</p>
-          {r.product?.sku && <p className="text-xs text-gray-400">{r.product.sku}</p>}
         </div>
       ),
     },
@@ -121,7 +119,7 @@ export default function SktReport() {
             <SummaryCard label="Süresi Dolmuş" value={summary.expired} color="text-red-600" />
             <SummaryCard label="Kritik (≤7 gün)" value={summary.critical} color="text-orange-500" />
             <SummaryCard label="Uyarı (≤30 gün)" value={summary.warning} color="text-yellow-600" />
-            <SummaryCard label="Güvenli" value={summary.safe} color="text-green-600" />
+            <SummaryCard label="Güvenli" value={summary.total - summary.warning - summary.critical - summary.expired} color="text-green-600" />
           </div>
         )}
 
@@ -144,11 +142,11 @@ export default function SktReport() {
 
         {/* Table */}
         <div className="bg-white rounded-xl border border-gray-200 flex-1 overflow-hidden">
-          <Table columns={columns} data={data?.items ?? []} loading={isLoading} />
+          <Table columns={columns} data={data?.data ?? []} loading={isLoading} />
         </div>
 
         {/* Pagination */}
-        {data && data.totalPages > 1 && (
+        {data && Math.ceil(data.total / (data.limit ?? 50)) > 1 && (
           <div className="flex gap-2 justify-end">
             <button
               disabled={page === 1}
@@ -158,10 +156,10 @@ export default function SktReport() {
               Önceki
             </button>
             <span className="px-3 py-1.5 text-sm text-gray-600">
-              {page} / {data.totalPages}
+              {page} / {Math.ceil(data.total / (data.limit ?? 50))}
             </span>
             <button
-              disabled={page === data.totalPages}
+              disabled={page === Math.ceil(data.total / (data.limit ?? 50))}
               onClick={() => setPage((p) => p + 1)}
               className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg disabled:opacity-40 hover:bg-gray-50"
             >

@@ -123,16 +123,17 @@ function DatePickerField({ value, onChange }: { value: string; onChange: (v: str
       {/* iOS: tarih seçici taşmasın diye overlay modal */}
       {Platform.OS === 'ios' && show && (
         <Modal transparent animationType="slide" visible onRequestClose={() => setShow(false)}>
-          <TouchableOpacity
-            style={{ flex: 1, backgroundColor: '#00000055', justifyContent: 'flex-end' }}
-            activeOpacity={1}
-            onPress={() => setShow(false)}
-          >
-            <TouchableOpacity activeOpacity={1}
-              style={{ backgroundColor: '#fff', borderTopLeftRadius: 16, borderTopRightRadius: 16 }}
-            >
-              <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 16, paddingTop: 12 }}>
-                <TouchableOpacity onPress={() => setShow(false)} hitSlop={8}>
+          <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+            {/* Arka plan — dokunulunca kapat */}
+            <TouchableOpacity
+              style={[StyleSheet.absoluteFillObject, { backgroundColor: '#00000055' }]}
+              activeOpacity={1}
+              onPress={() => setShow(false)}
+            />
+            {/* Picker kabı — plain View, TouchableOpacity değil */}
+            <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingBottom: 16 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 }}>
+                <TouchableOpacity onPress={() => setShow(false)} hitSlop={12}>
                   <Text style={{ color: '#1d4ed8', fontWeight: '700', fontSize: 15 }}>Tamam</Text>
                 </TouchableOpacity>
               </View>
@@ -144,8 +145,8 @@ function DatePickerField({ value, onChange }: { value: string; onChange: (v: str
                 minimumDate={new Date()}
                 style={{ width: '100%' }}
               />
-            </TouchableOpacity>
-          </TouchableOpacity>
+            </View>
+          </View>
         </Modal>
       )}
 
@@ -312,16 +313,17 @@ function ReceiveModal({
             {/* iOS: overlay modal — inline spinner ekrana sığmıyor */}
             {Platform.OS === 'ios' && showDatePicker && (
               <Modal transparent animationType="slide" visible onRequestClose={() => setShowDatePicker(false)}>
-                <TouchableOpacity
-                  style={{ flex: 1, backgroundColor: '#00000055', justifyContent: 'flex-end' }}
-                  activeOpacity={1}
-                  onPress={() => setShowDatePicker(false)}
-                >
-                  <TouchableOpacity activeOpacity={1}
-                    style={{ backgroundColor: '#fff', borderTopLeftRadius: 16, borderTopRightRadius: 16 }}
-                  >
-                    <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 16, paddingTop: 12 }}>
-                      <TouchableOpacity onPress={() => setShowDatePicker(false)} hitSlop={8}>
+                <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+                  {/* Arka plan — dokunulunca kapat */}
+                  <TouchableOpacity
+                    style={[StyleSheet.absoluteFillObject, { backgroundColor: '#00000055' }]}
+                    activeOpacity={1}
+                    onPress={() => setShowDatePicker(false)}
+                  />
+                  {/* Picker kabı — plain View, TouchableOpacity değil */}
+                  <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingBottom: 16 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 }}>
+                      <TouchableOpacity onPress={() => setShowDatePicker(false)} hitSlop={12}>
                         <Text style={{ color: '#1d4ed8', fontWeight: '700', fontSize: 15 }}>Tamam</Text>
                       </TouchableOpacity>
                     </View>
@@ -333,8 +335,8 @@ function ReceiveModal({
                       minimumDate={new Date()}
                       style={{ width: '100%' }}
                     />
-                  </TouchableOpacity>
-                </TouchableOpacity>
+                  </View>
+                </View>
               </Modal>
             )}
 
