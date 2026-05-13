@@ -29,7 +29,8 @@
         "CAMERA",
         "android.permission.CAMERA",
         "VIBRATE"
-      ]
+      ],
+      "versionCode": 2
     },
     "plugins": [
       "expo-router",
