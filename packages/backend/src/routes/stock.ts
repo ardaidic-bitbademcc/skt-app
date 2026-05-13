@@ -1,8 +1,8 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import prisma from '../lib/prisma';
-import { calcExpiryStatus } from '../lib/expiryStatus';
-import { authenticate } from '../middleware/auth';
+import { calcExpiryStatus, calcExpiryStatusOptional } from '../lib/expiryStatus';
+import { authenticate, requireAdmin } from '../middleware/auth';
 
 const router = Router();
 router.use(authenticate);
@@ -11,20 +11,20 @@ router.use(authenticate);
 
 const ReceiveSchema = z.object({
   // productId VEYA (productBarcode + productName) zorunlu.
-  // Yeni ürün akışında mobil, ürün oluşturma + stok eklemeyi TEK requestte gönderir;
-  // böylece Vercel serverless'ta farklı instance'a düşme riski ortadan kalkar.
   productId:      z.string().min(1).optional(),
   productBarcode: z.string().min(1).max(100).optional(),
   productName:    z.string().min(1).max(200).optional(),
   productUnit:    z.enum(['adet', 'kg', 'lt', 'kutu', 'paket', 'koli']).optional(),
+  productType:    z.enum(['PERISHABLE', 'CONSUMABLE']).optional(),
 
   warehouseId: z.string().min(1, 'Depo ID zorunlu'),
   branchId:    z.string().min(1, 'Şube ID zorunlu'),
   supplierId:  z.string().min(1).optional(),
+  // CONSUMABLE için expiryDate opsiyonel
   expiryDate:  z.string().refine(
     (v) => !isNaN(Date.parse(v)),
     { message: 'Geçerli bir tarih girin (YYYY-MM-DD)' }
-  ),
+  ).optional(),
   quantity:    z.number().int().positive('Adet 0\'dan büyük olmalı'),
   lotNumber:   z.string().max(50).optional(),
   notes:       z.string().max(300).optional(),
@@ -87,13 +87,14 @@ router.post('/receive', async (req: Request, res: Response, next: NextFunction) 
   try {
     const body = ReceiveSchema.parse(req.body);
 
-    const expiryDate = new Date(body.expiryDate);
-    expiryDate.setUTCHours(0, 0, 0, 0); // gün bazında karşılaştırma
+    // expiryDate: PERISHABLE için zorunlu, CONSUMABLE için null
+    let expiryDate: Date | null = null;
+    if (body.expiryDate) {
+      expiryDate = new Date(body.expiryDate);
+      expiryDate.setUTCHours(0, 0, 0, 0);
+    }
 
     // ─── Ürün çözümleme (atomic) ──────────────────────────────────────────────
-    // productId yoksa barcode+name ile ürünü bul ya da oluştur.
-    // Böylece Vercel serverless'ta ürün oluşturma + stok ekleme TEK transaction'da
-    // gerçekleşir ve farklı /tmp instance'larına düşme sorunu ortadan kalkar.
     let resolvedProductId = body.productId;
     if (!resolvedProductId) {
       const existing = await prisma.productBarcode.findUnique({
@@ -105,9 +106,10 @@ router.post('/receive', async (req: Request, res: Response, next: NextFunction) 
       } else {
         const created = await prisma.product.create({
           data: {
-            name:    body.productName!,
-            unit:    body.productUnit ?? 'adet',
-            barcodes: { create: { barcode: body.productBarcode!, isPrimary: true } },
+            name:        body.productName!,
+            unit:        body.productUnit ?? 'adet',
+            productType: body.productType ?? 'PERISHABLE',
+            barcodes:    { create: { barcode: body.productBarcode!, isPrimary: true } },
           },
           select: { id: true },
         });
@@ -123,17 +125,29 @@ router.post('/receive', async (req: Request, res: Response, next: NextFunction) 
     if (!product)   return res.status(400).json({ error: 'Ürün bulunamadı' });
     if (!warehouse) return res.status(400).json({ error: 'Depo bulunamadı' });
 
-    // Multi-tenancy: non-ADMIN users can only stock their own branch
+    // PERISHABLE ise expiryDate zorunlu
+    if (product.productType === 'PERISHABLE' && !expiryDate) {
+      return res.status(400).json({ error: 'Bu ürün için son kullanma tarihi zorunludur' });
+    }
+
+    // Multi-tenancy: non-ADMIN sadece kendi şubesine stok ekleyebilir
     if (req.user!.role !== 'ADMIN' && req.user!.branchId) {
       if (warehouse.branchId !== req.user!.branchId) {
         return res.status(403).json({ error: 'Bu depoya erişim yetkiniz yok' });
       }
     }
 
-    const status = calcExpiryStatus(expiryDate);
+    const status = calcExpiryStatusOptional(expiryDate);
 
+    // Lot eşleştirme:
+    //   PERISHABLE: aynı productId + warehouseId + expiryDate → birleştir
+    //   CONSUMABLE: aynı productId + warehouseId (expiryDate null) → tek lot
     const existingLot = await prisma.stockLot.findFirst({
-      where: { productId: resolvedProductId!, warehouseId: body.warehouseId, expiryDate },
+      where: {
+        productId:   resolvedProductId!,
+        warehouseId: body.warehouseId,
+        expiryDate:  expiryDate ?? null,
+      },
     });
 
     let lot;
@@ -144,7 +158,7 @@ router.post('/receive', async (req: Request, res: Response, next: NextFunction) 
         where: { id: existingLot.id },
         data: {
           quantity: { increment: body.quantity },
-          status,
+          ...(status !== null && { status }),
           ...(body.notes && { notes: body.notes }),
         },
       });
@@ -177,7 +191,7 @@ router.post('/receive', async (req: Request, res: Response, next: NextFunction) 
       select: { id: true, type: true, quantity: true, createdAt: true },
     });
 
-    await prisma.auditLog.create({
+    prisma.auditLog.create({
       data: {
         userId:   req.user!.id,
         action:   'STOCK_RECEIVE',
@@ -185,9 +199,283 @@ router.post('/receive', async (req: Request, res: Response, next: NextFunction) 
         entityId: lot.id,
         details:  JSON.stringify({ quantity: body.quantity, isNew }),
       },
-    });
+    }).catch(() => {});
 
     res.status(isNew ? 201 : 200).json({ lot: { ...lot, isNew }, movement, productId: resolvedProductId });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── GET /api/stock/counts ────────────────────────────────────────────────────
+router.get('/counts', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const schema = z.object({
+      branchId: z.string().optional(),
+      status:   z.enum(['DRAFT', 'CONFIRMED']).optional(),
+    });
+    const { branchId, status } = schema.parse(req.query);
+
+    const where: Record<string, any> = {};
+    if (status) where.status = status;
+    if (branchId) {
+      where.branchId = branchId;
+    } else if (req.user!.role !== 'ADMIN' && req.user!.branchId) {
+      where.branchId = req.user!.branchId;
+    }
+
+    const counts = await prisma.inventoryCount.findMany({
+      where,
+      orderBy: [{ period: 'desc' }, { createdAt: 'desc' }],
+      select: {
+        id: true, period: true, status: true, notes: true,
+        branchId: true, branch: { select: { id: true, name: true } },
+        createdAt: true, confirmedAt: true,
+        creator:  { select: { id: true, name: true } },
+        confirmer: { select: { id: true, name: true } },
+        _count: { select: { items: true } },
+      },
+    });
+
+    res.json(counts);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── POST /api/stock/counts ───────────────────────────────────────────────────
+// Yeni sayım oturumu başlat; tüm aktif ürün+depo kombinasyonlarını snapshot al
+router.post('/counts', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const schema = z.object({
+      branchId: z.string().min(1),
+      period:   z.string().regex(/^\d{4}-\d{2}$/, 'Format YYYY-MM olmalı'),
+      notes:    z.string().max(300).optional(),
+    });
+    const body = schema.parse(req.body);
+
+    // Aynı şube + dönem için zaten açık sayım var mı?
+    const existing = await prisma.inventoryCount.findUnique({
+      where: { branchId_period: { branchId: body.branchId, period: body.period } },
+    });
+    if (existing) {
+      return res.status(409).json({ error: `${body.period} dönemine ait sayım zaten mevcut`, id: existing.id });
+    }
+
+    // Şubeye ait tüm aktif stokları snapshot al
+    const activeLots = await prisma.stockLot.findMany({
+      where: { branchId: body.branchId, quantity: { gt: 0 } },
+      select: {
+        productId: true, warehouseId: true, quantity: true,
+        product: { select: { productType: true } },
+      },
+    });
+
+    // Ürün+depo başına toplam miktarı hesapla
+    const aggregated = new Map<string, { productId: string; warehouseId: string; total: number }>();
+    for (const lot of activeLots) {
+      const key = `${lot.productId}::${lot.warehouseId}`;
+      if (!aggregated.has(key)) {
+        aggregated.set(key, { productId: lot.productId, warehouseId: lot.warehouseId, total: 0 });
+      }
+      aggregated.get(key)!.total += lot.quantity;
+    }
+
+    const count = await prisma.inventoryCount.create({
+      data: {
+        branchId:  body.branchId,
+        period:    body.period,
+        notes:     body.notes,
+        createdBy: req.user!.id,
+        items: {
+          create: Array.from(aggregated.values()).map((r) => ({
+            productId:      r.productId,
+            warehouseId:    r.warehouseId,
+            systemQuantity: r.total,
+          })),
+        },
+      },
+      select: {
+        id: true, period: true, status: true, branchId: true,
+        _count: { select: { items: true } },
+      },
+    });
+
+    res.status(201).json(count);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── GET /api/stock/counts/:id ────────────────────────────────────────────────
+router.get('/counts/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const count = await prisma.inventoryCount.findUnique({
+      where: { id: req.params.id },
+      select: {
+        id: true, period: true, status: true, notes: true,
+        branchId: true, branch: { select: { id: true, name: true } },
+        createdAt: true, confirmedAt: true,
+        creator:   { select: { id: true, name: true } },
+        confirmer: { select: { id: true, name: true } },
+        items: {
+          select: {
+            id: true,
+            productId: true, product: { select: { id: true, name: true, unit: true, productType: true } },
+            warehouseId: true, warehouse: { select: { id: true, name: true } },
+            systemQuantity: true, countedQuantity: true, difference: true, notes: true,
+          },
+          orderBy: [
+            { product: { name: 'asc' } },
+            { warehouse: { name: 'asc' } },
+          ],
+        },
+      },
+    });
+
+    if (!count) return res.status(404).json({ error: 'Sayım bulunamadı' });
+    res.json(count);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── PATCH /api/stock/counts/:id/items/:itemId ────────────────────────────────
+// Sayım kalemi güncelle (personel fiili miktarı girer)
+router.patch('/counts/:id/items/:itemId', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const schema = z.object({
+      countedQuantity: z.number().int().min(0),
+      notes:           z.string().max(300).optional(),
+    });
+    const { countedQuantity, notes } = schema.parse(req.body);
+
+    const count = await prisma.inventoryCount.findUnique({
+      where: { id: req.params.id },
+      select: { status: true },
+    });
+    if (!count) return res.status(404).json({ error: 'Sayım bulunamadı' });
+    if (count.status === 'CONFIRMED') {
+      return res.status(400).json({ error: 'Onaylanmış sayım düzenlenemez' });
+    }
+
+    const item = await prisma.inventoryCountItem.findFirst({
+      where: { id: req.params.itemId, inventoryCountId: req.params.id },
+      select: { systemQuantity: true },
+    });
+    if (!item) return res.status(404).json({ error: 'Sayım kalemi bulunamadı' });
+
+    const updated = await prisma.inventoryCountItem.update({
+      where: { id: req.params.itemId },
+      data: {
+        countedQuantity,
+        difference: countedQuantity - item.systemQuantity,
+        notes,
+      },
+    });
+
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── POST /api/stock/counts/:id/confirm ──────────────────────────────────────
+// Sayımı onayla: fark olan kalemlere ADJUSTMENT hareketi yaz, stokları güncelle
+router.post('/counts/:id/confirm', requireAdmin, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const count = await prisma.inventoryCount.findUnique({
+      where: { id: req.params.id },
+      include: {
+        items: {
+          where: { countedQuantity: { not: null }, difference: { not: 0 } },
+          include: {
+            product: { select: { id: true, productType: true } },
+          },
+        },
+      },
+    });
+
+    if (!count)                    return res.status(404).json({ error: 'Sayım bulunamadı' });
+    if (count.status === 'CONFIRMED') return res.status(400).json({ error: 'Sayım zaten onaylandı' });
+
+    // Her farklı kalem için stok güncelle (FEFO: en eski lot önce)
+    for (const item of count.items) {
+      if (item.countedQuantity === null || item.difference === null || item.difference === 0) continue;
+
+      const lots = await prisma.stockLot.findMany({
+        where: { productId: item.productId, warehouseId: item.warehouseId },
+        orderBy: [
+          { expiryDate: 'asc' }, // FEFO — null (CONSUMABLE) için en sona düşer
+          { createdAt:  'asc' },
+        ],
+      });
+
+      let remaining = Math.abs(item.difference);
+      const isDecrease = item.difference < 0;
+
+      if (isDecrease) {
+        // Azalma: FEFO ile en eski lot'tan düş
+        for (const lot of lots) {
+          if (remaining <= 0) break;
+          const deduct = Math.min(lot.quantity, remaining);
+          await prisma.stockLot.update({
+            where: { id: lot.id },
+            data: { quantity: { decrement: deduct } },
+          });
+          await prisma.stockMovement.create({
+            data: {
+              stockLotId: lot.id,
+              type:       'ADJUSTMENT',
+              quantity:   -deduct,
+              userId:     req.user!.id,
+              notes:      `Sayım farkı: ${count.period}`,
+            },
+          });
+          remaining -= deduct;
+        }
+      } else {
+        // Artma: en yeni lot'a ekle (ya da CONSUMABLE tek lot)
+        const targetLot = lots[lots.length - 1];
+        if (targetLot) {
+          await prisma.stockLot.update({
+            where: { id: targetLot.id },
+            data: { quantity: { increment: item.difference } },
+          });
+          await prisma.stockMovement.create({
+            data: {
+              stockLotId: targetLot.id,
+              type:       'ADJUSTMENT',
+              quantity:   item.difference,
+              userId:     req.user!.id,
+              notes:      `Sayım farkı: ${count.period}`,
+            },
+          });
+        }
+      }
+    }
+
+    const confirmed = await prisma.inventoryCount.update({
+      where: { id: req.params.id },
+      data: {
+        status:      'CONFIRMED',
+        confirmedBy: req.user!.id,
+        confirmedAt: new Date(),
+      },
+      select: { id: true, period: true, status: true, confirmedAt: true },
+    });
+
+    prisma.auditLog.create({
+      data: {
+        userId:   req.user!.id,
+        action:   'INVENTORY_CONFIRM',
+        entity:   'InventoryCount',
+        entityId: req.params.id,
+        details:  JSON.stringify({ period: count.period, adjustedItems: count.items.length }),
+      },
+    }).catch(() => {});
+
+    res.json(confirmed);
   } catch (err) {
     next(err);
   }

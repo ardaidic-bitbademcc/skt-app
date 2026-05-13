@@ -178,6 +178,7 @@ exports.Prisma.ProductScalarFieldEnum = {
   categoryId: 'categoryId',
   unit: 'unit',
   minStock: 'minStock',
+  productType: 'productType',
   isActive: 'isActive',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
@@ -244,6 +245,32 @@ exports.Prisma.AuditLogScalarFieldEnum = {
   createdAt: 'createdAt'
 };
 
+exports.Prisma.InventoryCountScalarFieldEnum = {
+  id: 'id',
+  branchId: 'branchId',
+  period: 'period',
+  notes: 'notes',
+  status: 'status',
+  createdBy: 'createdBy',
+  confirmedBy: 'confirmedBy',
+  confirmedAt: 'confirmedAt',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.InventoryCountItemScalarFieldEnum = {
+  id: 'id',
+  inventoryCountId: 'inventoryCountId',
+  productId: 'productId',
+  warehouseId: 'warehouseId',
+  systemQuantity: 'systemQuantity',
+  countedQuantity: 'countedQuantity',
+  difference: 'difference',
+  notes: 'notes',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
 exports.Prisma.SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -272,7 +299,9 @@ exports.Prisma.ModelName = {
   StockMovement: 'StockMovement',
   ExpiryAlert: 'ExpiryAlert',
   NotificationSetting: 'NotificationSetting',
-  AuditLog: 'AuditLog'
+  AuditLog: 'AuditLog',
+  InventoryCount: 'InventoryCount',
+  InventoryCountItem: 'InventoryCountItem'
 };
 
 /**

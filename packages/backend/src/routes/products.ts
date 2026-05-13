@@ -14,6 +14,7 @@ const CreateProductSchema = z.object({
   categoryId:  z.string().min(1).optional(),
   unit:        z.enum(['adet', 'kg', 'lt', 'kutu', 'paket', 'koli']).default('adet'),
   minStock:    z.number().int().min(0).default(0),
+  productType: z.enum(['PERISHABLE', 'CONSUMABLE']).default('PERISHABLE'),
   barcode:     z.string().min(1).max(100).optional(),
 });
 
@@ -30,7 +31,7 @@ const ListQuerySchema = z.object({
 
 const productSelect = {
   id: true, name: true, description: true, unit: true,
-  minStock: true, isActive: true, createdAt: true,
+  minStock: true, productType: true, isActive: true, createdAt: true,
   category: { select: { id: true, name: true } },
   barcodes: { select: { id: true, barcode: true, isPrimary: true } },
 } as const;

@@ -14,10 +14,11 @@ interface ProductForm {
   categoryId: string;
   barcode: string;
   minStock: string;
+  productType: 'PERISHABLE' | 'CONSUMABLE';
 }
 
 const EMPTY_FORM: ProductForm = {
-  name: '', description: '', unit: 'adet', categoryId: '', barcode: '', minStock: '0',
+  name: '', description: '', unit: 'adet', categoryId: '', barcode: '', minStock: '0', productType: 'PERISHABLE',
 };
 
 export default function Products() {
@@ -44,6 +45,7 @@ export default function Products() {
         unit:        payload.unit,
         categoryId:  payload.categoryId  || undefined,  // boş string backend validation'da hata verir
         minStock:    parseInt(payload.minStock, 10) || 0,
+        productType: payload.productType,
         ...(!selected && payload.barcode ? { barcode: payload.barcode } : {}),
       };
       return selected
@@ -100,6 +102,7 @@ export default function Products() {
       categoryId: p.categoryId ?? '',
       barcode: '',      // barkod edit modda ayrı "Barkod" butonu ile yönetilir
       minStock: String((p as any).minStock ?? 0),
+      productType: p.productType ?? 'PERISHABLE',
     });
     setFormError('');
     setModal('edit');
@@ -230,6 +233,26 @@ export default function Products() {
               onChange={(e) => setForm({ ...form, name: e.target.value })}
               className={INPUT}
             />
+          </Field>
+          <Field label="Ürün Tipi">
+            <div className="flex gap-2">
+              {(['PERISHABLE', 'CONSUMABLE'] as const).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setForm({ ...form, productType: t })}
+                  className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                    form.productType === t
+                      ? t === 'PERISHABLE'
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-orange-500 text-white border-orange-500'
+                      : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  {t === 'PERISHABLE' ? '📦 SKT\'li Ürün' : '🥤 Sarf Malzeme'}
+                </button>
+              ))}
+            </div>
           </Field>
           <div className="grid grid-cols-2 gap-4">
             <Field label="Birim *">

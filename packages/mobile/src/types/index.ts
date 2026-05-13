@@ -1,6 +1,7 @@
 export type Role = 'ADMIN' | 'STAFF' | 'VIEWER';
 export type ExpiryStatus = 'SAFE' | 'WARNING' | 'CRITICAL' | 'EXPIRED';
 export type MovementType = 'IN' | 'OUT' | 'ADJUSTMENT' | 'WASTE' | 'TRANSFER';
+export type ProductType = 'PERISHABLE' | 'CONSUMABLE';
 
 export interface User {
   id: string;
@@ -16,6 +17,7 @@ export interface Product {
   name: string;
   unit: string;
   description: string | null;
+  productType: ProductType;
   category: { id: string; name: string } | null;
   barcodes: { id: string; barcode: string; isPrimary: boolean }[];
 }
@@ -24,9 +26,9 @@ export interface StockLot {
   id: string;
   productId: string;
   warehouseId: string;
-  expiryDate: string;
+  expiryDate: string | null;
   quantity: number;
-  status: ExpiryStatus;
+  status: ExpiryStatus | null;
   lotNumber: string | null;
   product: Product & { totalStock?: number };
   warehouse: { id: string; name: string };

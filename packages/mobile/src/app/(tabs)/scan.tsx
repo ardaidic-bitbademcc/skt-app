@@ -19,21 +19,22 @@ interface ReceiveForm {
   productId:   string;
   productName: string;
   productUnit: string;
+  productType: 'PERISHABLE' | 'CONSUMABLE';
   barcode:     string;
   warehouseId: string;
   branchId:    string;
   supplierId:  string;
-  expiryDate:  string; // "YYYY-MM-DD"
+  expiryDate:  string; // "YYYY-MM-DD" — CONSUMABLE için boş
   quantity:    string;
   lotNumber:   string;
   notes:       string;
 }
 
 interface ExistingLot {
-  id:        string;
-  expiryDate: string;
+  id:         string;
+  expiryDate: string | null;
   quantity:   number;
-  status:     ExpiryStatus;
+  status:     ExpiryStatus | null;
   lotNumber:  string | null;
   warehouse:  { id: string; name: string };
   supplier:   { id: string; name: string } | null;
@@ -44,6 +45,7 @@ interface BatchItem {
   productId:   string;
   productName: string;
   productUnit: string;
+  productType: 'PERISHABLE' | 'CONSUMABLE';
   barcode:     string;
   quantity:    string;
   expiryDate:  string;
@@ -51,7 +53,7 @@ interface BatchItem {
 }
 
 const EMPTY_FORM: ReceiveForm = {
-  productId: '', productName: '', productUnit: 'adet', barcode: '',
+  productId: '', productName: '', productUnit: 'adet', productType: 'PERISHABLE', barcode: '',
   warehouseId: '', branchId: '', supplierId: '',
   expiryDate: '', quantity: '', lotNumber: '', notes: '',
 };
@@ -170,7 +172,12 @@ function DatePickerField({ value, onChange }: { value: string; onChange: (v: str
 function ProductSummaryCard({ lots, unit }: { lots: ExistingLot[]; unit: string }) {
   const activeLots = lots
     .filter((l) => l.quantity > 0)
-    .sort((a, b) => new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime());
+    .sort((a, b) => {
+      if (!a.expiryDate && !b.expiryDate) return 0;
+      if (!a.expiryDate) return 1;
+      if (!b.expiryDate) return -1;
+      return new Date(a.expiryDate).getTime() - new Date(b.expiryDate).getTime();
+    });
 
   const totalStock  = activeLots.reduce((sum, l) => sum + l.quantity, 0);
   const hasCritical = activeLots.some((l) => l.status === 'CRITICAL' || l.status === 'EXPIRED');
@@ -191,23 +198,29 @@ function ProductSummaryCard({ lots, unit }: { lots: ExistingLot[]; unit: string 
       {activeLots.length === 0 ? (
         <Text style={s.summaryEmpty}>Stokta ürün yok</Text>
       ) : (
-        activeLots.slice(0, 4).map((lot) => (
-          <View key={lot.id} style={s.lotRow}>
-            <View style={[s.statusDot, { backgroundColor: STATUS_COLOR[lot.status] }]} />
-            <View style={{ flex: 1 }}>
-              <Text style={s.lotDate}>SKT: {formatDate(lot.expiryDate)}</Text>
-              <Text style={s.lotMeta}>
-                {lot.quantity} {unit} · {lot.warehouse.name}
-                {lot.lotNumber ? ` · ${lot.lotNumber}` : ''}
-              </Text>
+        activeLots.slice(0, 4).map((lot) => {
+          const statusColor = lot.status ? STATUS_COLOR[lot.status] : '#6b7280';
+          const statusBg    = lot.status ? STATUS_BG[lot.status]    : '#f3f4f6';
+          return (
+            <View key={lot.id} style={s.lotRow}>
+              <View style={[s.statusDot, { backgroundColor: statusColor }]} />
+              <View style={{ flex: 1 }}>
+                <Text style={s.lotDate}>
+                  {lot.expiryDate ? `SKT: ${formatDate(lot.expiryDate)}` : 'Sarf Malzeme'}
+                </Text>
+                <Text style={s.lotMeta}>
+                  {lot.quantity} {unit} · {lot.warehouse.name}
+                  {lot.lotNumber ? ` · ${lot.lotNumber}` : ''}
+                </Text>
+              </View>
+              <View style={[s.statusPill, { backgroundColor: statusBg }]}>
+                <Text style={[s.statusPillText, { color: statusColor }]}>
+                  {lot.expiryDate ? daysLeftLabel(lot.expiryDate) : 'Stokta'}
+                </Text>
+              </View>
             </View>
-            <View style={[s.statusPill, { backgroundColor: STATUS_BG[lot.status] }]}>
-              <Text style={[s.statusPillText, { color: STATUS_COLOR[lot.status] }]}>
-                {daysLeftLabel(lot.expiryDate)}
-              </Text>
-            </View>
-          </View>
-        ))
+          );
+        })
       )}
 
       {activeLots.length > 4 && (
@@ -297,7 +310,8 @@ function ReceiveModal({
             placeholder="Ürün adı"
           />
 
-          {/* SKT */}
+          {/* SKT — sadece PERISHABLE ürünlerde */}
+          {form.productType !== 'CONSUMABLE' && (
           <View style={{ marginBottom: 14 }}>
             <Text style={s.fieldLabel}>Son Kullanma Tarihi *</Text>
             <TouchableOpacity
@@ -351,6 +365,18 @@ function ReceiveModal({
               />
             )}
           </View>
+          )}
+
+          {/* CONSUMABLE rozeti */}
+          {form.productType === 'CONSUMABLE' && (
+            <View style={{ marginBottom: 14, flexDirection: 'row', alignItems: 'center' }}>
+              <View style={{ backgroundColor: '#fff7ed', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: '#fed7aa' }}>
+                <Text style={{ color: '#c2410c', fontSize: 13, fontWeight: '600' }}>
+                  🥤 Sarf Malzeme — SKT yok
+                </Text>
+              </View>
+            </View>
+          )}
 
           {/* Adet */}
           <Field
@@ -477,7 +503,7 @@ function BatchModal({
 
   function handleSubmit() {
     if (!warehouseId) { setErr('Depo seçmelisiniz'); return; }
-    const missingDate = items.find((it) => !it.expiryDate);
+    const missingDate = items.find((it) => it.productType !== 'CONSUMABLE' && !it.expiryDate);
     if (missingDate) { setErr(`"${missingDate.productName}" için SKT tarihi eksik`); return; }
     const badQty = items.find((it) => !it.quantity || parseInt(it.quantity, 10) <= 0);
     if (badQty) { setErr(`"${badQty.productName}" için geçersiz adet`); return; }
@@ -543,13 +569,21 @@ function BatchModal({
                     placeholderTextColor="#9ca3af"
                   />
                 </View>
-                <View style={{ flex: 2 }}>
-                  <Text style={s.fieldLabel}>Son Kullanma Tarihi *</Text>
-                  <DatePickerField
-                    value={item.expiryDate}
-                    onChange={(v) => updateItem(item.key, 'expiryDate', v)}
-                  />
-                </View>
+                {item.productType !== 'CONSUMABLE' ? (
+                  <View style={{ flex: 2 }}>
+                    <Text style={s.fieldLabel}>Son Kullanma Tarihi *</Text>
+                    <DatePickerField
+                      value={item.expiryDate}
+                      onChange={(v) => updateItem(item.key, 'expiryDate', v)}
+                    />
+                  </View>
+                ) : (
+                  <View style={{ flex: 2, justifyContent: 'flex-end', paddingBottom: 2 }}>
+                    <View style={{ backgroundColor: '#fff7ed', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 6, borderWidth: 1, borderColor: '#fed7aa' }}>
+                      <Text style={{ color: '#c2410c', fontSize: 12, fontWeight: '600' }}>🧴 Sarf · SKT yok</Text>
+                    </View>
+                  </View>
+                )}
               </View>
 
               <View style={{ marginTop: 8 }}>
@@ -639,7 +673,7 @@ export default function ScanScreen() {
         warehouseId: f.warehouseId,
         branchId:    f.branchId,
         supplierId:  f.supplierId  || undefined,
-        expiryDate:  f.expiryDate,
+        expiryDate:  f.productType !== 'CONSUMABLE' ? f.expiryDate || undefined : undefined,
         quantity:    parseInt(f.quantity, 10),
         lotNumber:   f.lotNumber   || undefined,
         notes:       f.notes       || undefined,
@@ -729,7 +763,7 @@ export default function ScanScreen() {
           warehouseId,
           branchId,
           supplierId: supplierId || undefined,
-          expiryDate: item.expiryDate,
+          expiryDate: item.productType !== 'CONSUMABLE' ? item.expiryDate || undefined : undefined,
           quantity:   parseInt(item.quantity, 10),
           lotNumber:  item.lotNumber || undefined,
         });
@@ -798,6 +832,7 @@ export default function ScanScreen() {
               productId:   product.id,
               productName: product.name,
               productUnit: product.unit ?? 'adet',
+              productType: product.productType ?? 'PERISHABLE',
               barcode,
               quantity:    '1',
               expiryDate:  '',
@@ -858,6 +893,7 @@ export default function ScanScreen() {
           productId:   product.id,
           productName: product.name,
           productUnit,
+          productType: product.productType ?? 'PERISHABLE',
           warehouseId: prefillWarehouseId,
           branchId:    prefillBranchId,
           supplierId:  prefillSupplierId,
@@ -884,7 +920,7 @@ export default function ScanScreen() {
     setSubmitErr('');
     const f = form;
 
-    if (!f.expiryDate) { setSubmitErr('Son kullanma tarihi seçmelisiniz'); return; }
+    if (f.productType !== 'CONSUMABLE' && !f.expiryDate) { setSubmitErr('Son kullanma tarihi seçmelisiniz'); return; }
     if (!f.quantity || parseInt(f.quantity, 10) <= 0) { setSubmitErr("Adet 0'dan büyük olmalı"); return; }
     if (!f.warehouseId) { setSubmitErr('Depo seçmelisiniz'); return; }
     if (isNew && !f.productName.trim()) { setSubmitErr('Yeni ürün için ürün adı zorunlu'); return; }

@@ -46,9 +46,9 @@ export default function SktReport() {
       'Depo': lot.warehouse?.name ?? '-',
       'Miktar': lot.quantity,
       'Birim': lot.product?.unit ?? '-',
-      'SKT': formatDate(lot.expiryDate),
-      'Kalan Gün': daysLeft(lot.expiryDate),
-      'Durum': lot.status,
+      'SKT': lot.expiryDate ? formatDate(lot.expiryDate) : '-',
+      'Kalan Gün': lot.expiryDate ? daysLeft(lot.expiryDate) : '-',
+      'Durum': lot.status ?? '-',
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
@@ -75,12 +75,13 @@ export default function SktReport() {
     {
       key: 'expiryDate',
       header: 'SKT',
-      render: (r) => formatDate(r.expiryDate),
+      render: (r) => r.expiryDate ? formatDate(r.expiryDate) : '-',
     },
     {
       key: 'daysLeft',
       header: 'Kalan Gün',
       render: (r) => {
+        if (!r.expiryDate) return '-';
         const d = daysLeft(r.expiryDate);
         return (
           <span className={d <= 0 ? 'text-red-600 font-semibold' : d <= 7 ? 'text-orange-600 font-semibold' : 'text-gray-700'}>
@@ -92,7 +93,7 @@ export default function SktReport() {
     {
       key: 'status',
       header: 'Durum',
-      render: (r) => <StatusBadge status={r.status as ExpiryStatus} />,
+      render: (r) => r.status ? <StatusBadge status={r.status} /> : null,
     },
   ];
 
@@ -104,7 +105,7 @@ export default function SktReport() {
         action={
           <button
             onClick={exportExcel}
-            disabled={!data?.items?.length}
+            disabled={!data?.data?.length}
             className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-40"
           >
             Excel İndir

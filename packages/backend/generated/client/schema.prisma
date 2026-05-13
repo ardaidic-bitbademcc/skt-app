@@ -25,9 +25,11 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  stockMovements      StockMovement[]
-  auditLogs           AuditLog[]
-  notificationSetting NotificationSetting?
+  stockMovements           StockMovement[]
+  auditLogs                AuditLog[]
+  notificationSetting      NotificationSetting?
+  inventoryCountsCreated   InventoryCount[]     @relation("InventoryCountCreator")
+  inventoryCountsConfirmed InventoryCount[]     @relation("InventoryCountConfirmer")
 }
 
 model Branch {
@@ -39,9 +41,10 @@ model Branch {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users      User[]
-  warehouses Warehouse[]
-  stockLots  StockLot[]
+  users           User[]
+  warehouses      Warehouse[]
+  stockLots       StockLot[]
+  inventoryCounts InventoryCount[]
 }
 
 model Warehouse {
@@ -53,7 +56,8 @@ model Warehouse {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  stockLots StockLot[]
+  stockLots      StockLot[]
+  inventoryItems InventoryCountItem[]
 }
 
 model Category {
@@ -78,6 +82,7 @@ model Supplier {
   stockLots StockLot[]
 }
 
+// productType: "PERISHABLE" (SKT'li) | "CONSUMABLE" (bardak, tabak vb. SKT yok)
 model Product {
   id          String    @id @default(cuid())
   name        String
@@ -86,12 +91,14 @@ model Product {
   category    Category? @relation(fields: [categoryId], references: [id])
   unit        String    @default("adet")
   minStock    Int       @default(0)
+  productType String    @default("PERISHABLE")
   isActive    Boolean   @default(true)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  barcodes  ProductBarcode[]
-  stockLots StockLot[]
+  barcodes       ProductBarcode[]
+  stockLots      StockLot[]
+  inventoryItems InventoryCountItem[]
 }
 
 model ProductBarcode {
@@ -104,8 +111,10 @@ model ProductBarcode {
   @@index([barcode])
 }
 
-// status: "SAFE" | "WARNING" | "CRITICAL" | "EXPIRED"
+// status: "SAFE" | "WARNING" | "CRITICAL" | "EXPIRED" | null (CONSUMABLE)
+// expiryDate: PERISHABLE için zorunlu, CONSUMABLE için null
 // Aynı productId + warehouseId + expiryDate → tek lot (FEFO)
+// CONSUMABLE: aynı productId + warehouseId → tek lot (expiryDate null)
 model StockLot {
   id          String    @id @default(cuid())
   productId   String
@@ -118,9 +127,9 @@ model StockLot {
   supplier    Supplier? @relation(fields: [supplierId], references: [id])
 
   lotNumber  String?
-  expiryDate DateTime
-  quantity   Int      @default(0)
-  status     String   @default("SAFE")
+  expiryDate DateTime?
+  quantity   Int       @default(0)
+  status     String?
   notes      String?
 
   createdAt DateTime @default(now())
@@ -185,4 +194,49 @@ model AuditLog {
 
   @@index([entity, entityId])
   @@index([createdAt])
+}
+
+// ─── Aylık Sayım ──────────────────────────────────────────────────────────────
+// status: "DRAFT" (devam ediyor) | "CONFIRMED" (onaylandı, stok güncellendi)
+model InventoryCount {
+  id          String    @id @default(cuid())
+  branchId    String
+  branch      Branch    @relation(fields: [branchId], references: [id])
+  period      String // "2026-05" formatında YYYY-MM
+  notes       String?
+  status      String    @default("DRAFT")
+  createdBy   String
+  creator     User      @relation("InventoryCountCreator", fields: [createdBy], references: [id])
+  confirmedBy String?
+  confirmer   User?     @relation("InventoryCountConfirmer", fields: [confirmedBy], references: [id])
+  confirmedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  items InventoryCountItem[]
+
+  @@unique([branchId, period])
+  @@index([status])
+}
+
+// Her satır: bir ürün + bir depo için sayım
+model InventoryCountItem {
+  id               String         @id @default(cuid())
+  inventoryCountId String
+  inventoryCount   InventoryCount @relation(fields: [inventoryCountId], references: [id], onDelete: Cascade)
+  productId        String
+  product          Product        @relation(fields: [productId], references: [id])
+  warehouseId      String
+  warehouse        Warehouse      @relation(fields: [warehouseId], references: [id])
+
+  systemQuantity  Int // sayım başladığındaki sistem değeri (snapshot)
+  countedQuantity Int? // personelin girdiği (null = henüz sayılmadı)
+  difference      Int? // countedQuantity - systemQuantity (negatif = kayıp/zayi)
+  notes           String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([inventoryCountId, productId, warehouseId])
+  @@index([inventoryCountId])
 }
