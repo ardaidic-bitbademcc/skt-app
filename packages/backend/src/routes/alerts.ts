@@ -82,6 +82,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
         orderBy: { expiryDate: 'asc' }, // FEFO
         select: {
           id: true,
+          productId: true,
           expiryDate: true,
           quantity: true,
           status: true,
@@ -93,6 +94,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
             },
           },
           warehouse: { select: { id: true, name: true } },
+          supplier: { select: { id: true, name: true } },
         },
       }),
       prisma.stockLot.count({ where }),

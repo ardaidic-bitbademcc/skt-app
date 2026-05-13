@@ -43,6 +43,15 @@ async function main() {
     create: { id: 'supplier-1', name: 'ABC Tedarik A.Ş.' },
   });
 
+  // Seed ürünlerinin eski lotlarını temizle (her seed çalışmasında taze veri)
+  const SEED_IDS = [
+    'product-8690000000001', 'product-8690000000002', 'product-8690000000003',
+    'product-8690000000004', 'product-8690000000005',
+  ];
+  await prisma.stockMovement.deleteMany({ where: { stockLot: { productId: { in: SEED_IDS } } } });
+  await prisma.expiryAlert.deleteMany({   where: { stockLot: { productId: { in: SEED_IDS } } } });
+  await prisma.stockLot.deleteMany({      where: { productId: { in: SEED_IDS } } });
+
   // Ürünler: çeşitli SKT durumlarını temsil eder
   const products = [
     { name: 'Süt 1L',       barcode: '8690000000001', categoryId: icecek.id, daysOffset: 10 },
