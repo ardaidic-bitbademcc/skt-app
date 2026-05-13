@@ -6,7 +6,10 @@
     "scheme": "skt",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
+    "icon": "./assets/icon.png",
     "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
       "backgroundColor": "#1d4ed8"
     },
     "ios": {
@@ -18,6 +21,10 @@
     "android": {
       "package": "com.skt.takip",
       "newArchEnabled": false,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1d4ed8"
+      },
       "permissions": [
         "CAMERA",
         "android.permission.CAMERA",
