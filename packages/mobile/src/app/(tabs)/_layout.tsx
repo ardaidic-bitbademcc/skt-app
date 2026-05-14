@@ -1,7 +1,10 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Tabs, Redirect } from 'expo-router';
-import { Text } from 'react-native';
+import { Text, Platform } from 'react-native';
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
 import { useAuth } from '../../lib/AuthContext';
+import api from '../../lib/api';
 
 function TabIcon({ emoji, focused }: { emoji: string; focused: boolean }) {
   return (
@@ -11,8 +14,47 @@ function TabIcon({ emoji, focused }: { emoji: string; focused: boolean }) {
   );
 }
 
+async function registerPushToken() {
+  if (!Device.isDevice) return; // simülatörde push token yok
+
+  const { status: existingStatus } = await Notifications.getPermissionsAsync();
+  let finalStatus = existingStatus;
+  if (existingStatus !== 'granted') {
+    const { status } = await Notifications.requestPermissionsAsync();
+    finalStatus = status;
+  }
+  if (finalStatus !== 'granted') return;
+
+  try {
+    const tokenData = await Notifications.getExpoPushTokenAsync({
+      projectId: 'your-expo-project-id', // EAS ile doldurulur
+    });
+    await api.post('/notifications/register-token', { token: tokenData.data });
+  } catch {
+    // Push token kaydedilemezse sessizce devam et
+  }
+}
+
 export default function TabsLayout() {
   const { user, loading } = useAuth();
+
+  // Push token registration — kullanıcı giriş yaptığında bir kez çalışır
+  useEffect(() => {
+    if (user) {
+      registerPushToken().catch(() => {});
+    }
+  }, [user?.id]);
+
+  // Android notification channel
+  useEffect(() => {
+    if (Platform.OS === 'android') {
+      Notifications.setNotificationChannelAsync('default', {
+        name: 'SKT Uyarıları',
+        importance: Notifications.AndroidImportance.HIGH,
+        sound: 'default',
+      }).catch(() => {});
+    }
+  }, []);
 
   // Declarative auth guard: when token expires or logout fires, React re-renders
   // and Redirect kicks in — safer than imperative router.replace from an axios interceptor
@@ -46,6 +88,13 @@ export default function TabsLayout() {
         options={{
           title: 'Barkod',
           tabBarIcon: ({ focused }) => <TabIcon emoji="📷" focused={focused} />,
+        }}
+      />
+      <Tabs.Screen
+        name="sayim"
+        options={{
+          title: 'Sayım',
+          tabBarIcon: ({ focused }) => <TabIcon emoji="📋" focused={focused} />,
         }}
       />
     </Tabs>

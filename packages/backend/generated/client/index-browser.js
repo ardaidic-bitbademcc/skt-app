@@ -231,7 +231,15 @@ exports.Prisma.NotificationSettingScalarFieldEnum = {
   days15: 'days15',
   days7: 'days7',
   expired: 'expired',
-  pushToken: 'pushToken',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.PushTokenScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  token: 'token',
+  deviceId: 'deviceId',
+  createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 };
 
@@ -299,6 +307,7 @@ exports.Prisma.ModelName = {
   StockMovement: 'StockMovement',
   ExpiryAlert: 'ExpiryAlert',
   NotificationSetting: 'NotificationSetting',
+  PushToken: 'PushToken',
   AuditLog: 'AuditLog',
   InventoryCount: 'InventoryCount',
   InventoryCountItem: 'InventoryCountItem'

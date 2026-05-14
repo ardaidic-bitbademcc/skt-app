@@ -7,6 +7,7 @@ const NAV = [
   { to: '/excel-import',    label: 'Excel İçe Aktar' },
   { to: '/skt-report',      label: 'SKT Raporu' },
   { to: '/inventory-count', label: '📋 Sayım' },
+  { to: '/users',           label: '👥 Kullanıcılar', adminOnly: true },
 ];
 
 export function Layout() {
@@ -25,7 +26,7 @@ export function Layout() {
           <span className="text-lg font-bold text-blue-600">SKT Takip</span>
         </div>
         <nav className="flex-1 px-3 py-4 space-y-1">
-          {NAV.map((n) => (
+          {NAV.filter((n) => !('adminOnly' in n && n.adminOnly) || user?.role === 'ADMIN').map((n) => (
             <NavLink
               key={n.to}
               to={n.to}

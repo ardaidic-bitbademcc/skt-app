@@ -2,13 +2,15 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 
-import authRoutes      from './routes/auth';
-import productRoutes   from './routes/products';
-import stockRoutes     from './routes/stock';
-import alertRoutes     from './routes/alerts';
-import warehouseRoutes from './routes/warehouses';
-import supplierRoutes  from './routes/suppliers';
-import branchRoutes    from './routes/branches';
+import authRoutes         from './routes/auth';
+import productRoutes      from './routes/products';
+import stockRoutes        from './routes/stock';
+import alertRoutes        from './routes/alerts';
+import warehouseRoutes    from './routes/warehouses';
+import supplierRoutes     from './routes/suppliers';
+import branchRoutes       from './routes/branches';
+import userRoutes         from './routes/users';
+import notificationRoutes from './routes/notifications';
 import { errorHandler } from './middleware/errorHandler';
 
 const app = express();
@@ -24,7 +26,9 @@ app.use('/api/stock',      stockRoutes);
 app.use('/api/alerts',     alertRoutes);
 app.use('/api/warehouses', warehouseRoutes);
 app.use('/api/suppliers',  supplierRoutes);
-app.use('/api/branches',   branchRoutes);
+app.use('/api/branches',       branchRoutes);
+app.use('/api/users',           userRoutes);
+app.use('/api/notifications',   notificationRoutes);
 
 // Kayıt dışı route
 app.use((_req, res) => res.status(404).json({ error: 'Endpoint bulunamadı' }));

@@ -435,20 +435,45 @@ router.post('/counts/:id/confirm', requireAdmin, async (req: Request, res: Respo
           remaining -= deduct;
         }
       } else {
-        // Artma: en yeni lot'a ekle (ya da CONSUMABLE tek lot)
-        const targetLot = lots[lots.length - 1];
-        if (targetLot) {
-          await prisma.stockLot.update({
-            where: { id: targetLot.id },
-            data: { quantity: { increment: item.difference } },
+        // Artma: CONSUMABLE → tek lot'a ekle; PERISHABLE → SKT'si bilinmeyen yeni lot oluştur
+        if (item.product.productType === 'CONSUMABLE') {
+          const targetLot = lots[lots.length - 1];
+          if (targetLot) {
+            await prisma.stockLot.update({
+              where: { id: targetLot.id },
+              data: { quantity: { increment: item.difference! } },
+            });
+            await prisma.stockMovement.create({
+              data: {
+                stockLotId: targetLot.id,
+                type:       'ADJUSTMENT',
+                quantity:   item.difference!,
+                userId:     req.user!.id,
+                notes:      `Sayım fazlası: ${count.period}`,
+              },
+            });
+          }
+        } else {
+          // PERISHABLE fazlası — SKT bilinmiyor, yeni lot (null expiryDate)
+          const warehouseId = item.warehouseId;
+          const newLot = await prisma.stockLot.create({
+            data: {
+              productId:   item.productId,
+              warehouseId,
+              branchId:    count.branchId,
+              expiryDate:  null,
+              quantity:    item.difference!,
+              status:      null,
+              notes:       `Sayım fazlası — SKT bilinmiyor (${count.period})`,
+            },
           });
           await prisma.stockMovement.create({
             data: {
-              stockLotId: targetLot.id,
+              stockLotId: newLot.id,
               type:       'ADJUSTMENT',
-              quantity:   item.difference,
+              quantity:   item.difference!,
               userId:     req.user!.id,
-              notes:      `Sayım farkı: ${count.period}`,
+              notes:      `Sayım fazlası: ${count.period} — SKT bilinmiyor`,
             },
           });
         }
@@ -476,6 +501,55 @@ router.post('/counts/:id/confirm', requireAdmin, async (req: Request, res: Respo
     }).catch(() => {});
 
     res.json(confirmed);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── PATCH /api/stock/lots/:id/sold-out ─────────────────────────────────────
+// Tükendi: lot miktarını 0'a çeker (lot kaydı silinmez), StockMovement (OUT) yazar
+router.patch('/lots/:id/sold-out', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const lot = await prisma.stockLot.findUnique({ where: { id: req.params.id } });
+    if (!lot) return res.status(404).json({ error: 'Lot bulunamadı' });
+
+    // Multi-tenancy: non-admin sadece kendi şubesinin lotlarını güncelleyebilir
+    if (req.user!.role !== 'ADMIN' && req.user!.branchId && lot.branchId !== req.user!.branchId) {
+      return res.status(403).json({ error: 'Bu lota erişim yetkiniz yok' });
+    }
+
+    if (lot.quantity === 0) {
+      return res.status(400).json({ error: 'Bu lot zaten tükenmiş' });
+    }
+
+    const previousQuantity = lot.quantity;
+
+    const updated = await prisma.stockLot.update({
+      where: { id: lot.id },
+      data:  { quantity: 0 },
+    });
+
+    await prisma.stockMovement.create({
+      data: {
+        stockLotId: lot.id,
+        type:       'OUT',
+        quantity:   -previousQuantity,
+        userId:     req.user!.id,
+        notes:      'Tükendi',
+      },
+    });
+
+    prisma.auditLog.create({
+      data: {
+        userId:   req.user!.id,
+        action:   'STOCK_SOLD_OUT',
+        entity:   'StockLot',
+        entityId: lot.id,
+        details:  JSON.stringify({ previousQuantity }),
+      },
+    }).catch(() => {});
+
+    res.json(updated);
   } catch (err) {
     next(err);
   }

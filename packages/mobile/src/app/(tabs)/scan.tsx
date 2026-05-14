@@ -2,7 +2,7 @@ import React, { useState, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Modal,
   ScrollView, TextInput, Alert, ActivityIndicator,
-  KeyboardAvoidingView, Platform, Vibration,
+  KeyboardAvoidingView, Platform, Vibration, FlatList,
 } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -57,6 +57,109 @@ const EMPTY_FORM: ReceiveForm = {
   warehouseId: '', branchId: '', supplierId: '',
   expiryDate: '', quantity: '', lotNumber: '', notes: '',
 };
+
+// ─── SarfMalzemePickerModal ───────────────────────────────────────────────────
+// Sarf malzemesi seçici: mevcut CONSUMABLE ürünlerde arama ya da yeni oluştur
+
+function SarfMalzemePickerModal({
+  visible,
+  onClose,
+  onSelect,
+  onNew,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onSelect: (p: Product) => void;
+  onNew: (name: string) => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const [search, setSearch] = useState('');
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['consumable-products', search],
+    queryFn:  () =>
+      api.get('/products', { params: { productType: 'CONSUMABLE', search: search || undefined, limit: 30 } })
+        .then((r) => r.data.data as Product[]),
+    enabled: visible,
+    staleTime: 0,
+  });
+
+  const products = data ?? [];
+
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View style={[s.modalHeader, { paddingTop: insets.top + 12 }]}>
+          <View style={{ flex: 1 }}>
+            <Text style={s.modalTitle}>🧴 Sarf Malzeme</Text>
+            <Text style={s.modalSub}>Mevcut ürünü seçin ya da yeni ekleyin</Text>
+          </View>
+          <TouchableOpacity onPress={onClose} hitSlop={8} style={{ paddingLeft: 16 }}>
+            <Text style={s.modalClose}>İptal</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Arama */}
+        <View style={{ paddingHorizontal: 16, paddingVertical: 10, backgroundColor: '#f9fafb', borderBottomWidth: 1, borderBottomColor: '#e5e7eb' }}>
+          <TextInput
+            style={[s.input, { marginBottom: 0 }]}
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Ürün adı ara…"
+            placeholderTextColor="#9ca3af"
+            autoFocus
+          />
+        </View>
+
+        <FlatList
+          data={products}
+          keyExtractor={(p) => p.id}
+          contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 20 }}
+          ListHeaderComponent={
+            search.trim() ? (
+              <TouchableOpacity
+                style={s.sarfNewItem}
+                onPress={() => { onNew(search.trim()); setSearch(''); }}
+                activeOpacity={0.8}
+              >
+                <Text style={s.sarfNewText}>+ "{ search.trim() }" adıyla yeni oluştur</Text>
+              </TouchableOpacity>
+            ) : null
+          }
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={s.sarfItem}
+              onPress={() => { onSelect(item); setSearch(''); }}
+              activeOpacity={0.8}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={s.sarfItemName}>{item.name}</Text>
+                <Text style={s.sarfItemSub}>{item.unit} · Sarf Malzeme</Text>
+              </View>
+              <Text style={{ color: '#9ca3af', fontSize: 18 }}>›</Text>
+            </TouchableOpacity>
+          )}
+          ListEmptyComponent={
+            isLoading ? (
+              <ActivityIndicator color="#1d4ed8" style={{ marginTop: 32 }} />
+            ) : (
+              <View style={{ alignItems: 'center', marginTop: 32 }}>
+                <Text style={{ color: '#6b7280', fontSize: 14 }}>
+                  {search ? 'Ürün bulunamadı' : 'Henüz sarf malzeme yok'}
+                </Text>
+                {!search && (
+                  <Text style={{ color: '#9ca3af', fontSize: 12, marginTop: 6 }}>
+                    Yukarıya ürün adı yazın
+                  </Text>
+                )}
+              </View>
+            )
+          }
+        />
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
 
 // ─── Field ────────────────────────────────────────────────────────────────────
 // CRITICAL: Bu component ReceiveModal dışında (top-level) tanımlanmalı.
@@ -647,6 +750,9 @@ export default function ScanScreen() {
   const [batchSubmitting, setBatchSubmitting] = useState(false);
   const [batchErr,        setBatchErr]        = useState('');
 
+  // ─── Sarf Malzeme ────────────────────────────────────────────────────────────
+  const [sarfPickerOpen, setSarfPickerOpen] = useState(false);
+
   // Her barkod için son okuma zamanını tutar — aynı barkodun kamera tarafından
   // art arda birden çok tetiklenmesini (debounce) önler.
   const scanCooldownRef = useRef<Map<string, number>>(new Map());
@@ -928,6 +1034,45 @@ export default function ScanScreen() {
     receiveMutation.mutate(f);
   }
 
+  // ─── Sarf Malzeme Handlers ─────────────────────────────────────────────────
+  function openSarfWithProduct(product: Product) {
+    const defaultWarehouse = warehouses[0];
+    setExistingLots([]);
+    setForm({
+      ...EMPTY_FORM,
+      productId:   product.id,
+      productName: product.name,
+      productUnit: product.unit ?? 'adet',
+      productType: 'CONSUMABLE',
+      barcode:     product.barcodes?.[0]?.barcode ?? '',
+      warehouseId: defaultWarehouse?.id ?? '',
+      branchId:    defaultWarehouse?.branchId ?? '',
+    });
+    setIsNew(false);
+    setSarfPickerOpen(false);
+    // Fetch existing lots
+    api.get(`/products/${product.id}`)
+      .then((r) => setExistingLots((r.data.stockLots ?? []).filter((l: ExistingLot) => l.quantity > 0)))
+      .catch(() => {});
+    setModalOpen(true);
+  }
+
+  function openSarfNew(name: string) {
+    const defaultWarehouse = warehouses[0];
+    setExistingLots([]);
+    setForm({
+      ...EMPTY_FORM,
+      productName: name,
+      productUnit: 'adet',
+      productType: 'CONSUMABLE',
+      warehouseId: defaultWarehouse?.id ?? '',
+      branchId:    defaultWarehouse?.branchId ?? '',
+    });
+    setIsNew(true);
+    setSarfPickerOpen(false);
+    setModalOpen(true);
+  }
+
   // ─── İzin yok ──────────────────────────────────────────────────────────────
   if (!permission) {
     return (
@@ -1058,9 +1203,18 @@ export default function ScanScreen() {
               <Text style={s.resetText}>↩ Tekrar Tara</Text>
             </TouchableOpacity>
           ) : (
-            <Text style={s.scanningText}>
-              {batchMode ? 'Taranıyor… (kamera aktif kalır)' : 'Taranıyor...'}
-            </Text>
+            <View style={{ gap: 10, alignItems: 'center' }}>
+              <Text style={s.scanningText}>
+                {batchMode ? 'Taranıyor… (kamera aktif kalır)' : 'Taranıyor...'}
+              </Text>
+              <TouchableOpacity
+                style={s.sarfBtn}
+                onPress={() => setSarfPickerOpen(true)}
+                activeOpacity={0.85}
+              >
+                <Text style={s.sarfBtnText}>🧴 Sarf Malzeme Ekle</Text>
+              </TouchableOpacity>
+            </View>
           )}
         </View>
       </View>
@@ -1089,6 +1243,13 @@ export default function ScanScreen() {
         onSubmit={submitBatch}
         submitting={batchSubmitting}
         submitError={batchErr}
+      />
+
+      <SarfMalzemePickerModal
+        visible={sarfPickerOpen}
+        onClose={() => setSarfPickerOpen(false)}
+        onSelect={openSarfWithProduct}
+        onNew={openSarfNew}
       />
     </View>
   );
@@ -1126,6 +1287,28 @@ const s = StyleSheet.create({
 
   bottomBar: { paddingHorizontal: 24, alignItems: 'center' },
   scanningText: { color: '#94a3b8', fontSize: 13 },
+
+  sarfBtn: {
+    backgroundColor: '#f97316',
+    borderRadius: 20, paddingVertical: 10, paddingHorizontal: 20,
+    alignSelf: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15, shadowRadius: 4, elevation: 3,
+  },
+  sarfBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+
+  sarfItem: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#fff', borderRadius: 10, padding: 14,
+    marginBottom: 8, borderWidth: 1, borderColor: '#e5e7eb',
+  },
+  sarfItemName: { fontSize: 15, fontWeight: '600', color: '#111827' },
+  sarfItemSub:  { fontSize: 12, color: '#9ca3af', marginTop: 2 },
+  sarfNewItem: {
+    backgroundColor: '#eff6ff', borderRadius: 10, padding: 14,
+    marginBottom: 12, borderWidth: 1, borderColor: '#bfdbfe',
+  },
+  sarfNewText: { color: '#1d4ed8', fontSize: 14, fontWeight: '600' },
   resetBtn: {
     backgroundColor: '#1d4ed8cc',
     paddingHorizontal: 28, paddingVertical: 12, borderRadius: 24,

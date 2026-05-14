@@ -28,6 +28,7 @@ model User {
   stockMovements           StockMovement[]
   auditLogs                AuditLog[]
   notificationSetting      NotificationSetting?
+  pushTokens               PushToken[]
   inventoryCountsCreated   InventoryCount[] @relation("InventoryCountCreator")
   inventoryCountsConfirmed InventoryCount[] @relation("InventoryCountConfirmer")
 }
@@ -178,8 +179,20 @@ model NotificationSetting {
   days15    Boolean  @default(true)
   days7     Boolean  @default(true)
   expired   Boolean  @default(true)
-  pushToken String?
   updatedAt DateTime @updatedAt
+}
+
+// Expo push tokens — bir kullanıcının birden fazla cihazı olabilir
+model PushToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  token     String   @unique
+  deviceId  String?  // isteğe bağlı cihaz kimliği
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
 }
 
 model AuditLog {

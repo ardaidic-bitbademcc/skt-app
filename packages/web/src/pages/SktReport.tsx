@@ -31,6 +31,15 @@ export default function SktReport() {
   const [editDate, setEditDate] = useState('');
   const [editErr,  setEditErr]  = useState('');
 
+  const soldOutMutation = useMutation({
+    mutationFn: (id: string) => api.patch(`/stock/lots/${id}/sold-out`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['alerts'] });
+      qc.invalidateQueries({ queryKey: ['alerts-summary'] });
+    },
+    onError: (err) => alert(apiError(err)),
+  });
+
   const expiryMutation = useMutation({
     mutationFn: ({ id, expiryDate }: { id: string; expiryDate: string }) =>
       api.patch(`/stock/lots/${id}/expiry`, { expiryDate }),
@@ -133,6 +142,26 @@ export default function SktReport() {
       key: 'status',
       header: 'Durum',
       render: (r) => r.status ? <StatusBadge status={r.status} /> : null,
+    },
+    {
+      key: 'actions',
+      header: '',
+      render: (r) => {
+        const isAlert = r.status === 'EXPIRED' || r.status === 'CRITICAL' || r.status === 'WARNING';
+        if (!isAlert) return null;
+        return (
+          <button
+            onClick={() => {
+              if (!confirm(`"${r.product?.name}" lotunu tükenmiş olarak işaretle?\nMiktar 0 yapılacak.`)) return;
+              soldOutMutation.mutate(r.id);
+            }}
+            disabled={soldOutMutation.isPending}
+            className="text-xs text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 px-2 py-1 rounded-lg hover:bg-red-50 transition-colors whitespace-nowrap"
+          >
+            Tükendi
+          </button>
+        );
+      },
     },
   ];
 

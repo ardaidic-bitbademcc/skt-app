@@ -21,10 +21,11 @@ const CreateProductSchema = z.object({
 const UpdateProductSchema = CreateProductSchema.partial().omit({ barcode: true });
 
 const ListQuerySchema = z.object({
-  search:     z.string().optional(),
-  categoryId: z.string().optional(),
-  page:       z.coerce.number().int().min(1).default(1),
-  limit:      z.coerce.number().int().min(1).max(100).default(20),
+  search:      z.string().optional(),
+  categoryId:  z.string().optional(),
+  productType: z.enum(['PERISHABLE', 'CONSUMABLE']).optional(),
+  page:        z.coerce.number().int().min(1).default(1),
+  limit:       z.coerce.number().int().min(1).max(100).default(20),
 });
 
 // ─── Shared select ───────────────────────────────────────────────────────────
@@ -56,8 +57,9 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     const skip  = (query.page - 1) * query.limit;
 
     const where: Record<string, any> = { isActive: true };
-    if (query.search)     where.name       = { contains: query.search };
-    if (query.categoryId) where.categoryId = query.categoryId;
+    if (query.search)      where.name        = { contains: query.search };
+    if (query.categoryId)  where.categoryId  = query.categoryId;
+    if (query.productType) where.productType = query.productType;
 
     const [products, total] = await Promise.all([
       prisma.product.findMany({
