@@ -1,0 +1,55 @@
+name: Android APK Build
+
+on:
+  workflow_dispatch:        # Manuel tetikleme (Actions sekmesinden "Run workflow")
+  push:
+    branches: [main]
+    paths:
+      - 'packages/mobile/**'
+      - '.github/workflows/android-build.yml'
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: packages/mobile/package-lock.json
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        working-directory: packages/mobile
+        run: npm ci
+
+      - name: Setup Expo & EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Build APK (EAS local)
+        working-directory: packages/mobile
+        run: eas build --platform android --profile preview-android --local --non-interactive --output ../android-release.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk-${{ github.run_number }}
+          path: packages/android-release.apk
+          retention-days: 30
