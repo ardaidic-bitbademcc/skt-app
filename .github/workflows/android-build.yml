@@ -45,6 +45,8 @@ jobs:
 
       - name: Build APK (EAS local)
         working-directory: packages/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: eas build --platform android --profile preview-android --local --non-interactive --output ../android-release.apk
 
       - name: Upload APK artifact
