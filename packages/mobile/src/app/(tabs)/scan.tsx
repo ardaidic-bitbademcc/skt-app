@@ -787,9 +787,10 @@ export default function ScanScreen() {
 
       if (isNew) {
         // productId yok — backend atomic olarak oluşturur
-        payload.productBarcode = f.barcode;
-        payload.productName    = f.productName;
-        payload.productUnit    = f.productUnit || 'adet';
+        if (f.barcode) payload.productBarcode = f.barcode; // boşsa gönderme
+        payload.productName = f.productName;
+        payload.productUnit = f.productUnit || 'adet';
+        payload.productType = f.productType;               // CONSUMABLE/PERISHABLE
       } else {
         payload.productId = f.productId;
       }

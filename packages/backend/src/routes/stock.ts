@@ -29,8 +29,8 @@ const ReceiveSchema = z.object({
   lotNumber:   z.string().max(50).optional(),
   notes:       z.string().max(300).optional(),
 }).refine(
-  (d) => d.productId || (d.productBarcode && d.productName),
-  { message: 'productId veya productBarcode+productName zorunlu' },
+  (d) => d.productId || d.productName,
+  { message: 'productId veya productName zorunlu' },
 );
 
 // ─── POST /api/stock/receive ──────────────────────────────────────────────────
@@ -97,19 +97,25 @@ router.post('/receive', async (req: Request, res: Response, next: NextFunction) 
     // ─── Ürün çözümleme (atomic) ──────────────────────────────────────────────
     let resolvedProductId = body.productId;
     if (!resolvedProductId) {
-      const existing = await prisma.productBarcode.findUnique({
-        where: { barcode: body.productBarcode! },
-        select: { productId: true },
-      });
-      if (existing) {
-        resolvedProductId = existing.productId;
-      } else {
+      // Barkod varsa önce barkoda göre ara
+      if (body.productBarcode) {
+        const existing = await prisma.productBarcode.findUnique({
+          where: { barcode: body.productBarcode },
+          select: { productId: true },
+        });
+        if (existing) resolvedProductId = existing.productId;
+      }
+
+      // Hâlâ çözülmediyse yeni ürün oluştur (barkod opsiyonel — sarf malzeme)
+      if (!resolvedProductId) {
         const created = await prisma.product.create({
           data: {
             name:        body.productName!,
             unit:        body.productUnit ?? 'adet',
             productType: body.productType ?? 'PERISHABLE',
-            barcodes:    { create: { barcode: body.productBarcode!, isPrimary: true } },
+            barcodes:    body.productBarcode
+              ? { create: { barcode: body.productBarcode, isPrimary: true } }
+              : undefined,
           },
           select: { id: true },
         });
