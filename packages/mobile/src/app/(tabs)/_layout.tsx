@@ -27,7 +27,7 @@ async function registerPushToken() {
 
   try {
     const tokenData = await Notifications.getExpoPushTokenAsync({
-      projectId: 'your-expo-project-id', // EAS ile doldurulur
+      projectId: '1f60b643-c0d8-4929-8072-c8091358eb3d',
     });
     await api.post('/notifications/register-token', { token: tokenData.data });
   } catch {
