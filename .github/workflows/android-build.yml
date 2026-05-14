@@ -24,15 +24,6 @@ jobs:
           cache: 'npm'
           cache-dependency-path: packages/mobile/package-lock.json
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Install dependencies
         working-directory: packages/mobile
         run: npm ci
@@ -43,15 +34,8 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
-      - name: Build APK (EAS local)
+      - name: Build APK (EAS Cloud)
         working-directory: packages/mobile
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: eas build --platform android --profile preview-android --local --non-interactive --output ../android-release.apk
-
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-apk-${{ github.run_number }}
-          path: packages/android-release.apk
-          retention-days: 30
+        run: eas build --platform android --profile preview-android --non-interactive --no-wait
