@@ -40,7 +40,17 @@ jobs:
         working-directory: packages/mobile
         run: npx expo prebuild --platform android --no-install
 
-      - name: Build release APK with Gradle (debug keystore ile imzalı)
+      - name: Create keystore for signing
+        run: |
+          mkdir -p $HOME/.android
+          keytool -genkeypair -v \
+            -keystore $HOME/.android/debug.keystore \
+            -alias androiddebugkey \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass android -keypass android \
+            -dname "CN=Android Debug,O=Android,C=US"
+
+      - name: Build release APK with Gradle
         working-directory: packages/mobile/android
         run: |
           chmod +x gradlew
