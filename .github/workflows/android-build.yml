@@ -40,11 +40,15 @@ jobs:
         working-directory: packages/mobile
         run: npx expo prebuild --platform android --no-install
 
-      - name: Build debug APK with Gradle
+      - name: Build release APK with Gradle (debug keystore ile imzalı)
         working-directory: packages/mobile/android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleRelease --no-daemon \
+            -Pandroid.injected.signing.store.file=$HOME/.android/debug.keystore \
+            -Pandroid.injected.signing.store.password=android \
+            -Pandroid.injected.signing.key.alias=androiddebugkey \
+            -Pandroid.injected.signing.key.password=android
 
       - name: Publish APK to GitHub Release (sabit indirme linki)
         uses: softprops/action-gh-release@v2
@@ -53,7 +57,7 @@ jobs:
           name: "SKT App – Son APK (Build #${{ github.run_number }})"
           body: |
             Her yeni build'de bu release güncellenir, link değişmez.
-            **İndirmek için:** `app-debug.apk` dosyasına tıklayın.
-          files: packages/mobile/android/app/build/outputs/apk/debug/app-debug.apk
+            **İndirmek için:** `app-release.apk` dosyasına tıklayın.
+          files: packages/mobile/android/app/build/outputs/apk/release/app-release.apk
           prerelease: true
           make_latest: true
