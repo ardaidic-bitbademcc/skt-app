@@ -13,8 +13,8 @@ export default function LoginScreen() {
   const { login } = useAuth();
   const insets    = useSafeAreaInsets();
 
-  const [email,    setEmail]    = useState('staff@skt.app');
-  const [password, setPassword] = useState('staff123');
+  const [email,    setEmail]    = useState('');
+  const [password, setPassword] = useState('');
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState('');
 
